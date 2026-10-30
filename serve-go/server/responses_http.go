@@ -116,8 +116,9 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
-	if len(ids)+o.max > s.cfg.Engine.ContextLimit() {
-		fail(w, 400, "invalid_request_error", "prompt and output exceed context")
+	o.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), o.max)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
 	var tools []map[string]any

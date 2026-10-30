@@ -333,6 +333,19 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 
 var stopGeneration = errors.New("stop sequence reached")
 
+// The native engine reserves eight context positions. Match Python's default
+// fit_max_tokens behavior by shortening the answer to the space left.
+func fitOutputTokens(contextLimit, promptTokens, requested int) (int, error) {
+	room := contextLimit - 8 - promptTokens
+	if room < 1 {
+		return 0, errors.New("prompt leaves no room for output")
+	}
+	if requested > room {
+		return room, nil
+	}
+	return requested, nil
+}
+
 func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -358,8 +371,9 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
-	if len(ids)+opt.max > s.cfg.Engine.ContextLimit() {
-		fail(w, 400, "invalid_request_error", "prompt and output exceed context")
+	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
 	var tools []map[string]any
