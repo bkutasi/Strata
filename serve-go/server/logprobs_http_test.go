@@ -130,3 +130,13 @@ func TestChatRewrittenStructuredLogprobsHTTP(t *testing.T) {
 		}
 	}
 }
+
+func TestChatLogprobsOldEngineStopHTTP(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		content, _, entries, _ := readLogprobReply(t, "engine-logprobs-old-stop",
+			`"logprobs":true,"stop":"A","chat_template_kwargs":{"enable_thinking":false}`, stream)
+		if content != "" || len(entries) != 0 {
+			t.Fatalf("stream=%v content=%q entries=%#v", stream, content, entries)
+		}
+	}
+}

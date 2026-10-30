@@ -131,6 +131,37 @@ func TestLogprobValidation(t *testing.T) {
 	}
 }
 
+func TestLogprobOldEngineDeliversTokenBeforeNextRecord(t *testing.T) {
+	for _, mode := range []string{"logprobs-old-wait", "logprobs-late"} {
+		t.Run(mode, func(t *testing.T) {
+			e := startFake(t, mode, &bytes.Buffer{})
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			count, callbacks := 0, 0
+			_, err := e.GenerateWithOptions(ctx, []int{12, 34}, 3, RequestOptions{
+				Sampling: Sampling{Logprobs: &count},
+				OnLogprob: func(id int, lp *Logprob) error {
+					if id != 42 || lp != nil {
+						t.Fatalf("unexpected logprob: id=%d lp=%v", id, lp)
+					}
+					callbacks++
+					return nil
+				},
+				OnToken: func(id int) error {
+					if id != 42 {
+						t.Fatalf("unexpected token %d", id)
+					}
+					_, err := io.WriteString(e.stdin, "ACK\n")
+					return err
+				},
+			})
+			if err != nil || callbacks != 1 {
+				t.Fatalf("callbacks=%d error=%v", callbacks, err)
+			}
+		})
+	}
+}
+
 func BenchmarkGenerationCommand(b *testing.B) {
 	ids := make([]int, 262144)
 	for i := range ids {
@@ -233,6 +264,14 @@ func TestHelperProcess(t *testing.T) {
 		if strings.HasPrefix(line, "GEN ") || strings.HasPrefix(line, "GENI ") {
 			requests++
 			switch mode {
+			case "logprobs-old-wait", "logprobs-late":
+				fmt.Println("T 42")
+				if s.Scan() && s.Text() == "ACK" {
+					if mode == "logprobs-late" {
+						fmt.Println("LP -0.1")
+					}
+					fmt.Println("DONE 2 2 1 1 stop")
+				}
 			case "logprobs", "logprobs-geni", "logprobs-missing", "logprobs-stop", "logprobs-cancel", "logprobs-bad":
 				want := "GEN 3 logprobs=2 allowed=8,9 12,34"
 				if mode == "logprobs-geni" {

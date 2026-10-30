@@ -26,7 +26,7 @@ func TestHelperProcess(t *testing.T) {
 	}
 	switch os.Args[3] {
 	case "engine", "engine-tool", "engine-cancel", "engine-deep-tool", "engine-deep-reason",
-		"engine-topk-20", "engine-topk-64", "engine-topk-default", "engine-sampling", "engine-logprobs", "engine-logprobs-json", "engine-logprobs-thinking", "engine-logprobs-repair":
+		"engine-topk-20", "engine-topk-64", "engine-topk-default", "engine-sampling", "engine-logprobs", "engine-logprobs-json", "engine-logprobs-thinking", "engine-logprobs-repair", "engine-logprobs-old-stop":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -36,6 +36,13 @@ func TestHelperProcess(t *testing.T) {
 			if strings.HasPrefix(scanner.Text(), "GEN ") {
 				if os.Args[3] == "engine-cancel" {
 					fmt.Println("T 104")
+					if scanner.Scan() && scanner.Text() == "STOP" {
+						fmt.Println("DONE 1 2 1 1 cancel")
+					}
+					continue
+				}
+				if os.Args[3] == "engine-logprobs-old-stop" {
+					fmt.Println("T 65")
 					if scanner.Scan() && scanner.Text() == "STOP" {
 						fmt.Println("DONE 1 2 1 1 cancel")
 					}

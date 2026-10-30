@@ -538,11 +538,63 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	stopping := false
 	var pending *int
 	var carried *record
+	var lpTimer *time.Timer
+	var lpWait <-chan time.Time
 	defer func() {
 		if timer != nil {
 			timer.Stop()
 		}
+		if lpTimer != nil {
+			lpTimer.Stop()
+		}
 	}()
+	deliverPending := func(lp *Logprob) error {
+		id := *pending
+		pending = nil
+		lpWait = nil
+		if lpTimer != nil {
+			lpTimer.Stop()
+		}
+		if stopping || cancelled != nil || ctx.Err() != nil {
+			return nil
+		}
+		err := func() error {
+			returned := false
+			defer func() {
+				if !returned {
+					e.abort()
+				}
+			}()
+			var err error
+			if opts.OnLogprob != nil {
+				err = opts.OnLogprob(id, lp)
+			}
+			if err == nil && ctx.Err() == nil && opts.OnToken != nil {
+				err = opts.OnToken(id)
+			}
+			returned = true
+			return err
+		}()
+		if errors.Is(err, ErrStopGeneration) {
+			stopping = true
+			if e.CanStop && (carried == nil || !strings.HasPrefix(carried.line, "DONE ")) {
+				stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+				err = e.writeCommand(stopCtx, "STOP\n")
+				stopCancel()
+				if err != nil {
+					e.abort()
+					return err
+				}
+				timer = time.NewTimer(300 * time.Second)
+				cancel = timer.C
+			}
+			return nil
+		}
+		if err != nil {
+			e.abort()
+		}
+		return err
+	}
 	for {
 		// Cancellation from a callback must be handled before a buffered DONE.
 		if ctxDone != nil && ctx.Err() != nil {
@@ -580,6 +632,11 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				return result, errors.New("engine did not finish after STOP")
 			}
 			return result, cancelled
+		case <-lpWait:
+			if err := deliverPending(nil); err != nil {
+				return result, err
+			}
+			continue
 		case r, ok := <-records:
 			if carried != nil {
 				carried = nil
@@ -606,43 +663,8 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				} else {
 					carried = &r
 				}
-				id := *pending
-				pending = nil
-				if !stopping && cancelled == nil && ctx.Err() == nil {
-					err := func() error {
-						returned := false
-						defer func() {
-							if !returned {
-								e.abort()
-							}
-						}()
-						var err error
-						if opts.OnLogprob != nil {
-							err = opts.OnLogprob(id, lp)
-						}
-						if err == nil && ctx.Err() == nil && opts.OnToken != nil {
-							err = opts.OnToken(id)
-						}
-						returned = true
-						return err
-					}()
-					if errors.Is(err, ErrStopGeneration) {
-						stopping = true
-						if e.CanStop && (carried == nil || !strings.HasPrefix(carried.line, "DONE ")) {
-							stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
-							err = e.writeCommand(stopCtx, "STOP\n")
-							stopCancel()
-							if err != nil {
-								e.abort()
-								return result, err
-							}
-							timer = time.NewTimer(300 * time.Second)
-							cancel = timer.C
-						}
-					} else if err != nil {
-						e.abort()
-						return result, err
-					}
+				if err := deliverPending(lp); err != nil {
+					return result, err
 				}
 				continue
 			}
@@ -661,6 +683,13 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				if opts.Sampling.Logprobs != nil {
 					token := int(id)
 					pending = &token
+					// Older engines omit LP; Python waits at most 0.5 s for it.
+					if lpTimer == nil {
+						lpTimer = time.NewTimer(500 * time.Millisecond)
+					} else {
+						lpTimer.Reset(500 * time.Millisecond)
+					}
+					lpWait = lpTimer.C
 					continue
 				}
 				if !stopping && cancelled == nil && ctx.Err() == nil && opts.OnLogprob != nil {
@@ -727,6 +756,12 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				}
 			case "PP", "RESUME", "REUSED":
 				// Progress and cache reuse are intentionally not exposed.
+			case "LP":
+				if opts.Sampling.Logprobs == nil {
+					e.abort()
+					return result, fmt.Errorf("unsupported engine record %q", r.line)
+				}
+				// An LP that arrived after the compatibility timeout is stale.
 			case "ERR":
 				e.abort()
 				return result, EngineError(strings.TrimSpace(strings.TrimPrefix(r.line, "ERR")))
