@@ -14,8 +14,23 @@ must not be followed by another request. Callers must start a new engine.
 DONE with a nonfinite finish returns ErrNonfinite and discards the process.
 Startup and shutdown deadlines are supplied by the caller.
 
-This does not implement sampling options, token streaming callbacks, image
-requests, log probabilities, batch slots, checkpoints or session commands,
+`GenerateWithOptions` accepts typed sampling values and an optional synchronous
+token callback. Nil sampling fields use native defaults (including greedy
+temperature); zero temperature is greedy. Top-k 0 or above 64 maps to 64.
+An active penalty uses a 64-token window unless a positive `PenaltyLastN` is
+supplied. Seed 0 is omitted and the native engine chooses its seed. Invalid
+values are rejected before writing. Callbacks run in order on the request
+goroutine, after each token is collected and before DONE; they must return
+promptly and must not reenter the same engine. A callback error immediately
+kills and discards the child, returning the error and tokens collected so far.
+A callback panic also discards the child and propagates to the caller.
+On cancellation no callbacks run after cancellation is observed; tokens drained
+before DONE remain in the result. The caller must start a new engine after
+either case.
+
+This does not implement image requests, logit bias, log probabilities or
+allowed-token constraints, batch slots, checkpoints or session commands,
 telemetry, engine restart/recovery, GPU-aware silence detection, or Python
-server feature parity. It does not start or configure an engine automatically.
+server feature parity (including tuning and prefill-only requests). It does not
+start or configure an engine automatically.
 Do not use the byte-only protocol fixture as a native engine.

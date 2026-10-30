@@ -239,10 +239,102 @@ type Result struct {
 	Extra              []string
 }
 
+// Sampling uses nil fields for native defaults. Values are validated before
+// sending; TopK 0 or greater than 64 maps to 64 as in the Python server.
+type Sampling struct {
+	Temperature, TopP, MinP                              *float64
+	TopK, PenaltyLastN                                   *int
+	RepetitionPenalty, FrequencyPenalty, PresencePenalty *float64
+	Seed                                                 *uint64
+}
+
+// RequestOptions configures a text request. OnToken runs synchronously in
+// protocol order, after the token is appended to Result and before DONE.
+// It must not call Generate or Close on the same Engine.
+type RequestOptions struct {
+	Sampling Sampling
+	OnToken  func(int) error
+}
+
+func samplingKeys(s Sampling) (string, error) {
+	var keys strings.Builder
+	addFloat := func(key string, v *float64, min, max float64, include func(float64) bool) error {
+		if v == nil {
+			return nil
+		}
+		if math.IsNaN(*v) || math.IsInf(*v, 0) || *v < min || *v > max {
+			return fmt.Errorf("invalid %s", key)
+		}
+		if include(*v) {
+			keys.WriteString(" " + key + "=" + strconv.FormatFloat(*v, 'g', -1, 64))
+		}
+		return nil
+	}
+	positive := func(v float64) bool { return v > 0 }
+	if err := addFloat("temperature", s.Temperature, 0, math.MaxFloat32, positive); err != nil {
+		return "", err
+	}
+	if err := addFloat("top_p", s.TopP, math.SmallestNonzeroFloat32, 1, func(v float64) bool { return v < 1 }); err != nil {
+		return "", err
+	}
+	if s.TopK != nil {
+		if *s.TopK < 0 || int64(*s.TopK) > math.MaxInt32 {
+			return "", errors.New("invalid top_k")
+		}
+		k := *s.TopK
+		if k == 0 || k > 64 {
+			k = 64
+		}
+		fmt.Fprintf(&keys, " top_k=%d", k)
+	}
+	if err := addFloat("min_p", s.MinP, 0, 1, positive); err != nil {
+		return "", err
+	}
+	penalty := false
+	for _, p := range []struct {
+		name  string
+		value *float64
+		min   float64
+		def   float64
+	}{
+		{"penalty_repeat", s.RepetitionPenalty, math.SmallestNonzeroFloat32, 1},
+		{"penalty_freq", s.FrequencyPenalty, -math.MaxFloat32, 0},
+		{"penalty_present", s.PresencePenalty, -math.MaxFloat32, 0},
+	} {
+		if err := addFloat(p.name, p.value, p.min, math.MaxFloat32, func(v float64) bool { return v != p.def }); err != nil {
+			return "", err
+		}
+		penalty = penalty || (p.value != nil && *p.value != p.def)
+	}
+	if s.PenaltyLastN != nil && (*s.PenaltyLastN < 0 || int64(*s.PenaltyLastN) > math.MaxInt32) {
+		return "", errors.New("invalid penalty_last_n")
+	}
+	if penalty {
+		n := 64
+		if s.PenaltyLastN != nil && *s.PenaltyLastN > 0 {
+			n = *s.PenaltyLastN
+		}
+		fmt.Fprintf(&keys, " penalty_last_n=%d", n)
+	}
+	if s.Seed != nil && *s.Seed > 0 {
+		fmt.Fprintf(&keys, " seed=%d", *s.Seed)
+	}
+	return keys.String(), nil
+}
+
 // Generate sends a greedy text-only GEN. Cancellation sends STOP if advertised,
 // then waits at most one second for DONE before killing the process. A cancelled
 // request always discards the process: STOP can race native request admission.
 func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, error) {
+	return e.GenerateWithOptions(ctx, ids, maxNew, RequestOptions{})
+}
+
+// GenerateWithOptions sends a text-only GEN. Callback errors discard the
+// process immediately and return the error with all tokens received so far.
+// Cancellation has the same STOP and discard behavior as Generate; no further
+// callbacks run after cancellation is observed. A callback panic discards the
+// process and propagates. Callbacks must return promptly.
+func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int, opts RequestOptions) (Result, error) {
 	var result Result
 	if maxNew < 1 || len(ids) == 0 {
 		return result, errors.New("GEN requires positive maxNew and at least one token")
@@ -254,6 +346,10 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 		}
 		tokens[i] = strconv.Itoa(id)
 	}
+	keys, err := samplingKeys(opts.Sampling)
+	if err != nil {
+		return result, err
+	}
 	if err := e.acquire(ctx); err != nil {
 		return result, err
 	}
@@ -264,7 +360,7 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 	default:
 	}
 	e.idle.Store(false)
-	if err := e.writeCommand(ctx, fmt.Sprintf("GEN %d %s\n", maxNew, strings.Join(tokens, ","))); err != nil {
+	if err := e.writeCommand(ctx, fmt.Sprintf("GEN %d%s %s\n", maxNew, keys, strings.Join(tokens, ","))); err != nil {
 		return result, err
 	}
 	var cancel <-chan time.Time
@@ -277,8 +373,8 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 		}
 	}()
 	for {
-		select {
-		case <-ctxDone:
+		// Cancellation from a callback must be handled before a buffered DONE.
+		if ctxDone != nil && ctx.Err() != nil {
 			cancelled = ctx.Err()
 			ctxDone = nil
 			if !e.CanStop {
@@ -293,6 +389,10 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 			}
 			timer = time.NewTimer(time.Second)
 			cancel = timer.C
+		}
+		select {
+		case <-ctxDone:
+			continue
 		case <-cancel:
 			e.abort()
 			return result, cancelled
@@ -321,6 +421,23 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 					return result, fmt.Errorf("malformed token record %q", r.line)
 				}
 				result.Tokens = append(result.Tokens, int(id))
+				if cancelled == nil && ctx.Err() == nil && opts.OnToken != nil {
+					err := func() error {
+						returned := false
+						defer func() {
+							if !returned {
+								e.abort()
+							}
+						}()
+						err := opts.OnToken(int(id))
+						returned = true
+						return err
+					}()
+					if err != nil {
+						e.abort()
+						return result, err
+					}
+				}
 			case "PP", "RESUME", "REUSED":
 				// Progress and cache reuse are intentionally not exposed.
 			case "ERR":
@@ -334,6 +451,10 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 				if cancelled != nil {
 					e.abort()
 					return result, cancelled
+				}
+				if err := ctx.Err(); err != nil {
+					e.abort()
+					return result, err
 				}
 				return result, nil
 			default:
