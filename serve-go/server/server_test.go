@@ -250,7 +250,7 @@ func TestHTTPIntegration(t *testing.T) {
 		t.Fatalf("unsupported field status %d", status)
 	}
 	status, _ = request(t, ts.Client(), url, `{"messages":[{"role":"user","content":"<control>"}]}`, "secret")
-	if status != 502 {
+	if status != 200 {
 		t.Fatalf("control literal status %d", status)
 	}
 	status, _ = request(t, ts.Client(), ts.URL+"/v1/messages", `{}`, "secret")

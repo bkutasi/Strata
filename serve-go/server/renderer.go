@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"strata/requestnorm"
@@ -25,11 +24,11 @@ type Rendered struct {
 	Thinking bool
 }
 
-// TemplateRenderer is restricted to trusted model pack templates. Until literal
-// marking is ported, requests containing a control-token literal are rejected.
+// TemplateRenderer is restricted to trusted model pack templates.
 type TemplateRenderer struct {
 	renderer *template.Renderer
 	literals []string
+	source   string
 	mu       sync.Mutex
 }
 
@@ -51,9 +50,7 @@ func NewTemplateRenderer(pack string, tokenizer *modeltokenizer.Tokenizer) (*Tem
 	if err != nil {
 		return nil, err
 	}
-	literals := []string{"<think>", "</think>"}
-	literals = append(literals, tokenizer.ControlLiterals()...)
-	return &TemplateRenderer{renderer: t, literals: literals}, nil
+	return &TemplateRenderer{renderer: t, literals: literalTags(tokenizer.ControlLiterals()), source: string(source)}, nil
 }
 
 func (r *TemplateRenderer) Render(ctx context.Context, input requestnorm.Result) (Rendered, error) {
@@ -77,13 +74,14 @@ func (r *TemplateRenderer) render(ctx context.Context, inputMessages any, inputT
 	if err != nil {
 		return Rendered{}, err
 	}
-	for _, data := range [][]byte{messages, tools, kwargs} {
-		var v any
-		if err = json.Unmarshal(data, &v); err != nil {
+	marker, err := newLiteralMarker(r.literals, r.source, messages, tools, kwargs)
+	if err != nil {
+		return Rendered{}, err
+	}
+	if marker != nil {
+		messages, tools, kwargs, err = marker.markInputs()
+		if err != nil {
 			return Rendered{}, err
-		}
-		if r.hasLiteral(v) {
-			return Rendered{}, errors.New("control-token literals in request are not supported")
 		}
 	}
 	r.mu.Lock()
@@ -98,29 +96,9 @@ func (r *TemplateRenderer) render(ctx context.Context, inputMessages any, inputT
 			thinking = b
 		}
 	}
-	return Rendered{Prompt: prompt, Thinking: thinking}, nil
-}
-
-func (r *TemplateRenderer) hasLiteral(v any) bool {
-	switch x := v.(type) {
-	case string:
-		for _, tag := range r.literals {
-			if strings.Contains(x, tag) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range x {
-			if r.hasLiteral(item) {
-				return true
-			}
-		}
-	case map[string]any:
-		for k, item := range x {
-			if r.hasLiteral(k) || r.hasLiteral(item) {
-				return true
-			}
-		}
+	var plain []modeltokenizer.Span
+	if marker != nil {
+		prompt, plain = marker.restore(prompt)
 	}
-	return false
+	return Rendered{Prompt: prompt, Plain: plain, Thinking: thinking}, nil
 }

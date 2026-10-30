@@ -55,8 +55,10 @@ go build -o strata-go-server ./cmd/strata-go-server
 ```
 
 Run it only with a trusted model pack and template. The template renderer does
-not provide Python's immutable sandbox, and rejects requests containing
-literal control tokens rather than handling them like the Python server.
+not provide Python's immutable sandbox. Quoted control tokens in request values
+are encoded as ordinary text; template-generated tokens remain special. As in
+Python, assistant tool-call replay and outer user tool-result wrappers retain
+their markers. Control tokens in object keys are still rejected.
 See `../template/README.md` for the renderer's limits.
 
 This server requires the tokenizer files, template, and a native engine
