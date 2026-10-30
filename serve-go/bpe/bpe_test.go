@@ -65,7 +65,7 @@ func TestVocabularyIndexCollisionsAndEmptyToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok.ids, tok.seed = make([]uint32, 8), seed
+	tok.ids, tok.seed = make([]byte, 8*3), seed
 	for i, key := range keys {
 		_, slot, found := tok.findID(key)
 		if found {
@@ -74,7 +74,7 @@ func TestVocabularyIndexCollisionsAndEmptyToken(t *testing.T) {
 		if want := (int(bucket) + i) & 7; slot != want {
 			t.Fatalf("slot %d, want %d", slot, want)
 		}
-		tok.ids[slot] = uint32(i + 1)
+		tok.setIndexEntry(slot, uint32(i+1))
 	}
 	for i, key := range keys {
 		if id, ok := tok.tokenID(key); !ok || id != uint32(i) {
@@ -181,7 +181,10 @@ func TestWideVocabularyOffsets(t *testing.T) {
 }
 
 func TestIndexCapacity(t *testing.T) {
-	for _, tc := range []struct{ n, want int }{{0, 1}, {1, 2}, {2, 4}, {3, 8}, {4, 8}} {
+	for _, tc := range []struct{ n, want int }{
+		{0, 1}, {1, 2}, {2, 4}, {3, 8}, {4, 8}, {6, 16}, {7, 16},
+		{196608, 524288}, {196609, 524288},
+	} {
 		got, err := indexCapacity(tc.n)
 		if err != nil || got != tc.want {
 			t.Fatalf("capacity(%d) = %d, %v; want %d", tc.n, got, err, tc.want)
@@ -189,6 +192,68 @@ func TestIndexCapacity(t *testing.T) {
 	}
 	if _, err := indexCapacity(int(^uint(0) >> 1)); err == nil {
 		t.Fatal("overflowing capacity accepted")
+	}
+}
+
+func TestVocabularyIndexAtCapacityLimit(t *testing.T) {
+	tokens := make([]string, 512)
+	for i := range tokens {
+		tokens[i] = fmt.Sprintf("token-%d", i)
+	}
+	tok, err := New(tokens, nil, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tok.ids) != 1024*3 {
+		t.Fatalf("index has %d bytes, want 3072", len(tok.ids))
+	}
+	for i, token := range tokens {
+		if id, ok := tok.tokenID(token); !ok || id != uint32(i) {
+			t.Fatalf("lookup %q = %d, %v; want %d", token, id, ok, i)
+		}
+	}
+	if _, ok := tok.tokenID("missing"); ok {
+		t.Fatal("missing key found")
+	}
+}
+
+func TestWideVocabularyIndex(t *testing.T) {
+	tok, err := New([]string{"a", "b", "c"}, nil, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok.wideIDs = make([]uint32, len(tok.ids)/3)
+	for i := range tok.wideIDs {
+		tok.wideIDs[i] = uint32(tok.ids[i*3]) | uint32(tok.ids[i*3+1])<<8 | uint32(tok.ids[i*3+2])<<16
+	}
+	tok.ids = nil
+	for i, token := range []string{"a", "b", "c"} {
+		if id, ok := tok.tokenID(token); !ok || id != uint32(i) {
+			t.Fatalf("wide lookup %q = %d, %v", token, id, ok)
+		}
+	}
+	if _, ok := tok.tokenID("missing"); ok {
+		t.Fatal("missing key found")
+	}
+}
+
+func TestVocabularyIndexEntryWidths(t *testing.T) {
+	for _, wide := range []bool{false, true} {
+		tok := &Tokenizer{ids: make([]byte, 3)}
+		if wide {
+			tok.ids = nil
+			tok.wideIDs = make([]uint32, 1)
+		}
+		values := []uint32{0, 1, 255, 256, 65535, 65536, 1<<24 - 1}
+		if wide {
+			values = append(values, ^uint32(0))
+		}
+		for _, value := range values {
+			tok.setIndexEntry(0, value)
+			if got := tok.indexEntry(0); got != value {
+				t.Fatalf("wide=%v: got %d, want %d", wide, got, value)
+			}
+		}
 	}
 }
 

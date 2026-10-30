@@ -35,7 +35,8 @@ type Tokenizer struct {
 	offsets     []uint32
 	wideOffsets []int
 	special     []bool
-	ids         []uint32
+	ids         []byte // 24-bit ID+1 slots; zero is empty
+	wideIDs     []uint32
 	seed        maphash.Seed
 	rankOffsets []uint32
 	ranks       []rankEntry
@@ -86,13 +87,34 @@ func indexCapacity(n int) (int, error) {
 	return capacity, nil
 }
 
+func (t *Tokenizer) indexEntry(slot int) uint32 {
+	if t.wideIDs != nil {
+		return t.wideIDs[slot]
+	}
+	i := 3 * slot
+	return uint32(t.ids[i]) | uint32(t.ids[i+1])<<8 | uint32(t.ids[i+2])<<16
+}
+
+func (t *Tokenizer) setIndexEntry(slot int, value uint32) {
+	if t.wideIDs != nil {
+		t.wideIDs[slot] = value
+		return
+	}
+	i := 3 * slot
+	t.ids[i], t.ids[i+1], t.ids[i+2] = byte(value), byte(value>>8), byte(value>>16)
+}
+
 // findID returns the matching ID or the empty slot where it can be inserted.
 // Slots store ID+1 so that even an empty token at ID zero is representable.
 func (t *Tokenizer) findID(s string) (uint32, int, bool) {
-	mask := len(t.ids) - 1
+	capacity := len(t.ids) / 3
+	if t.wideIDs != nil {
+		capacity = len(t.wideIDs)
+	}
+	mask := capacity - 1
 	pos := int(maphash.String(t.seed, s) & uint64(mask))
 	for {
-		entry := t.ids[pos]
+		entry := t.indexEntry(pos)
 		if entry == 0 {
 			return 0, pos, false
 		}
@@ -179,7 +201,12 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 			offsets[i+1] = uint32(packed.Len())
 		}
 	}
-	t := &Tokenizer{tokens: packed.String(), offsets: offsets, wideOffsets: wideOffsets, ids: make([]uint32, capacity), seed: maphash.MakeSeed(), split: split}
+	t := &Tokenizer{tokens: packed.String(), offsets: offsets, wideOffsets: wideOffsets, seed: maphash.MakeSeed(), split: split}
+	if len(tokens) <= 1<<24-1 {
+		t.ids = make([]byte, capacity*3)
+	} else {
+		t.wideIDs = make([]uint32, capacity)
+	}
 	if len(types) != 0 {
 		t.special = make([]bool, len(types))
 	}
@@ -188,7 +215,7 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		if ok {
 			return nil, fmt.Errorf("duplicate token %q", s)
 		}
-		t.ids[slot] = uint32(i) + 1
+		t.setIndexEntry(slot, uint32(i)+1)
 		if len(types) != 0 && (types[i] == 3 || types[i] == 4) {
 			if s == "" {
 				return nil, fmt.Errorf("empty special token")
