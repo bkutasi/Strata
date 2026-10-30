@@ -53,6 +53,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
+	opt.budget = effectiveReasoningBudget(s.cfg.Family, rendered.Thinking, opt.max, opt.budget)
 	var tools []map[string]any
 	for _, value := range input.Tools {
 		b, e := value.MarshalJSON()

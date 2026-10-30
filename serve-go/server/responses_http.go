@@ -141,6 +141,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
+	o.budget = effectiveReasoningBudget(s.cfg.Family, rendered.Thinking, o.max, o.budget)
 	var tools []map[string]any
 	for _, v := range prepared.Tools {
 		b, e := v.MarshalJSON()

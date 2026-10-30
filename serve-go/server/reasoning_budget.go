@@ -9,14 +9,14 @@ import (
 	"strata/requestnorm"
 )
 
-// A non-positive budget disables the limit. Values above the host integer
-// range are capped later to the request's available output tokens.
+// -1 means unspecified; zero means the request disabled the explicit budget.
+// Values above the host integer range are capped to available output tokens.
 func reasoningBudget(root, value requestnorm.Value) (int, error) {
 	if value.Kind() == requestnorm.Null {
 		value, _ = root.Lookup("thinking_budget_tokens")
 	}
 	if value.Kind() == requestnorm.Null {
-		return 0, nil
+		return -1, nil
 	}
 	if integer, ok := value.Integer(); ok {
 		if integer == "0" || strings.HasPrefix(integer, "-") {
@@ -38,4 +38,27 @@ func reasoningBudget(root, value requestnorm.Value) (int, error) {
 		return int(number), nil
 	}
 	return 0, errors.New("reasoning_budget_tokens must be a whole number")
+}
+
+func effectiveReasoningBudget(family requestnorm.Family, thinking bool, max, budget int) int {
+	if !thinking {
+		return 0
+	}
+	if budget < 0 {
+		budget = 0
+		if family == requestnorm.FamilyDeepSeek {
+			budget = 32768
+		}
+	}
+	reserve := min(maxInt(512, max/4), max/2)
+	if budget == 0 && max >= 1024 {
+		budget = max - reserve
+	}
+	if budget == 0 && family == requestnorm.FamilyDeepSeek && max >= 48 && max < 1024 {
+		budget = max / 2
+	}
+	if budget > 0 {
+		budget = min(budget, maxInt(1, max-reserve))
+	}
+	return budget
 }
