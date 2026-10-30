@@ -44,6 +44,18 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
+	messages := make([]requestnorm.Message, len(input.Messages))
+	for i, message := range input.Messages {
+		messages[i] = message.Message
+	}
+	ids, embeddings, err := s.prepareImages(r, messages, ids)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
+		return
+	}
+	if embeddings != "" {
+		defer removeImageFile(embeddings)
+	}
 	ids, err = appendForcedPrompt(s.cfg.Tokenizer, rendered, ids, opt.force, s.cfg.MaxPromptBytes)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
@@ -169,7 +181,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		result, err = generateWithForce(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, s.repeatStop)
+		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, s.repeatStop)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

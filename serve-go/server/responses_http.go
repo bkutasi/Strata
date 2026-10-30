@@ -115,7 +115,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		o.repair, _ = repair.Bool()
 	}
 	for _, m := range prepared.Messages {
-		if m.Content.Parts != nil {
+		if m.Content.Parts != nil && s.cfg.Vision == nil {
 			fail(w, 400, "invalid_request_error", "images are not supported")
 			return
 		}
@@ -141,6 +141,14 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(ids) == 0 {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
+	}
+	ids, embeddings, err := s.prepareImages(r, input.Messages, ids)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
+		return
+	}
+	if embeddings != "" {
+		defer removeImageFile(embeddings)
 	}
 	o.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), o.max, s.cfg.DisableFitMaxTokens, o.explicitMax)
 	if err != nil {
@@ -286,7 +294,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	}
 	var result generationResult
 	if err == nil {
-		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, route, s.repeatStop)
+		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, s.repeatStop)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

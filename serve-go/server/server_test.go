@@ -296,7 +296,6 @@ func TestAnthropicCountTokens(t *testing.T) {
 		`{"messages":[{"role":"user","content":"Hi"}],"temperature":"0x1p0"}`,
 		`{"messages":[{"role":"user","content":"Hi"}],"top_k":1.0}`,
 		`{"messages":[{"role":"user","content":"Hi"}],"stop_sequences":"bad"}`,
-		`{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.test"}}]}]}`,
 		`{"messages":[{"role":"user","content":"Hi"}],"unknown":1}`,
 	} {
 		status, raw := request(t, ts.Client(), ts.URL+"/v1/messages/count_tokens", invalid, "secret")

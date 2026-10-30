@@ -105,11 +105,6 @@ func (s *server) decodeAnthropicCount(data []byte) (requestnorm.AnthropicResult,
 	if err != nil {
 		return result, err
 	}
-	for _, message := range result.Messages {
-		if message.Content.Parts != nil {
-			return requestnorm.AnthropicResult{}, errors.New("images are not supported")
-		}
-	}
 	return result, nil
 }
 

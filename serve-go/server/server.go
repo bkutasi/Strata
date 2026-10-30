@@ -25,12 +25,15 @@ import (
 )
 
 type Config struct {
-	Model                      string
-	Aliases                    []string
-	Family                     requestnorm.Family
-	Tokenizer                  *modeltokenizer.Tokenizer
-	Engine                     Engine
-	Renderer                   Renderer
+	Model     string
+	Aliases   []string
+	Family    requestnorm.Family
+	Tokenizer *modeltokenizer.Tokenizer
+	Engine    Engine
+	Renderer  Renderer
+	Vision    interface {
+		Encode(context.Context, []byte) (string, int, error)
+	}
 	APIKeys                    []string
 	MaxBody                    int64
 	MaxPromptBytes             int
@@ -57,6 +60,7 @@ type server struct {
 	normalizer *requestnorm.Normalizer
 	stopIDs    map[int]bool
 	repeatStop int
+	visionGate chan struct{}
 }
 
 func New(c Config) (http.Handler, error) {
@@ -71,6 +75,9 @@ func New(c Config) (http.Handler, error) {
 		return nil, err
 	}
 	s := &server{cfg: c, normalizer: n, stopIDs: map[int]bool{}, repeatStop: 256}
+	if c.Vision != nil {
+		s.visionGate = make(chan struct{}, 1)
+	}
 	if c.RepeatStopTokens != nil {
 		s.repeatStop = *c.RepeatStopTokens
 	}
@@ -113,7 +120,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "ok", "max_context": s.cfg.Engine.ContextLimit(), "model": s.cfg.Model,
-			"images": false, "api_key": len(s.cfg.APIKeys) > 0, "image_generation": false,
+			"images": s.cfg.Vision != nil, "api_key": len(s.cfg.APIKeys) > 0, "image_generation": false,
 			"loaded": s.cfg.Engine.Alive(), "service": "strata",
 		})
 		return
@@ -126,10 +133,14 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		}
 		models := []any{}
 		if s.cfg.Engine.Alive() {
+			modalities := []string{"text"}
+			if s.cfg.Vision != nil {
+				modalities = append(modalities, "image")
+			}
 			model := map[string]any{
 				"id": s.cfg.Model, "object": "model", "status": map[string]string{"value": "loaded"},
 				"meta":         map[string]int{"n_ctx": s.cfg.Engine.ContextLimit()},
-				"architecture": map[string]any{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
+				"architecture": map[string]any{"input_modalities": modalities, "output_modalities": []string{"text"}},
 			}
 			if len(s.cfg.Aliases) > 0 {
 				model["aliases"] = s.cfg.Aliases
@@ -160,6 +171,14 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "POST")
 		fail(w, http.StatusMethodNotAllowed, "invalid_request_error", "POST required")
 		return
+	}
+	if s.visionGate != nil {
+		select {
+		case s.visionGate <- struct{}{}:
+			defer func() { <-s.visionGate }()
+		case <-r.Context().Done():
+			return
+		}
 	}
 	if responses {
 		s.responses(w, r)
@@ -358,7 +377,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	}
 	for _, m := range req.Messages {
 		for _, p := range m.Content.Parts {
-			if p.Type == "image" {
+			if p.Type == "image" && s.cfg.Vision == nil {
 				return requestnorm.Result{}, o, errors.New("images are not supported")
 			}
 		}
@@ -427,6 +446,14 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(ids) == 0 {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
+	}
+	ids, embeddings, err := s.prepareImages(r, input.Messages, ids)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
+		return
+	}
+	if embeddings != "" {
+		defer removeImageFile(embeddings)
 	}
 	ids, err = appendForcedPrompt(s.cfg.Tokenizer, rendered, ids, opt.force, s.cfg.MaxPromptBytes)
 	if err != nil {
@@ -566,7 +593,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		pumped, err = generateWithForce(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, s.repeatStop)
+		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, s.repeatStop)
 	}
 	result, count := pumped.result, pumped.count
 	timings = pumped.timings

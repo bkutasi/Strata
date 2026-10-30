@@ -40,6 +40,82 @@ type standaloneConfig struct {
 	AnthropicThinking string            `json:"anthropic_thinking,omitempty"`
 	Sampling          json.RawMessage   `json:"sampling,omitempty"`
 	ReasoningEffort   string            `json:"reasoning_effort,omitempty"`
+	Vision            json.RawMessage   `json:"vision,omitempty"`
+}
+
+type standaloneVisionConfig struct {
+	Exe       string `json:"exe"`
+	MMProj    string `json:"mmproj"`
+	Model     string `json:"model"`
+	GPU       bool   `json:"gpu"`
+	Threads   int    `json:"threads"`
+	MaxTokens *int   `json:"max_tokens"`
+	MinTokens int    `json:"min_tokens"`
+}
+
+func (c standaloneConfig) visionConfig(family requestnorm.Family) (*standaloneVisionConfig, []string, error) {
+	if len(c.Vision) == 0 || bytes.Equal(bytes.TrimSpace(c.Vision), []byte("null")) {
+		return nil, nil, nil
+	}
+	if family == requestnorm.FamilyDeepSeek {
+		return nil, nil, errors.New("config vision is not supported for deepseek41")
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(c.Vision, &raw); err != nil || raw == nil {
+		return nil, nil, errors.New("config vision must be an object")
+	}
+	allowed := map[string]bool{"exe": true, "mmproj": true, "model": true, "gpu": true, "threads": true, "max_tokens": true, "min_tokens": true}
+	for key := range raw {
+		if !allowed[key] {
+			return nil, nil, fmt.Errorf("config vision contains unsupported field %q", key)
+		}
+	}
+	var cfg standaloneVisionConfig
+	if err := json.Unmarshal(c.Vision, &cfg); err != nil {
+		return nil, nil, fmt.Errorf("invalid config vision: %w", err)
+	}
+	if cfg.Exe == "" || cfg.MMProj == "" || cfg.Model == "" {
+		return nil, nil, errors.New("config vision requires exe, mmproj and model")
+	}
+	if cfg.Threads < 0 || cfg.MinTokens < 0 || (cfg.MaxTokens != nil && *cfg.MaxTokens < 0) {
+		return nil, nil, errors.New("config vision token limits and threads must be non-negative")
+	}
+	absolute := func(path string) string {
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(c.Cwd, path)
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return path
+		}
+		return abs
+	}
+	cfg.Exe, cfg.MMProj, cfg.Model = absolute(cfg.Exe), absolute(cfg.MMProj), absolute(cfg.Model)
+	return &cfg, cfg.readerArgs(), nil
+}
+
+func (c standaloneVisionConfig) readerArgs() []string {
+	args := []string{c.Exe, "--mmproj", c.MMProj, "--model", c.Model}
+	if c.GPU {
+		args = append(args, "--gpu")
+	}
+	if c.Threads > 0 {
+		args = append(args, "--threads", strconv.Itoa(c.Threads))
+	}
+	maxTokens := 300
+	if c.GPU {
+		maxTokens = 1024
+	}
+	if c.MaxTokens != nil {
+		maxTokens = *c.MaxTokens
+	}
+	if maxTokens > 0 {
+		args = append(args, "--max-tokens", strconv.Itoa(maxTokens))
+	}
+	if c.MinTokens > 0 {
+		args = append(args, "--min-tokens", strconv.Itoa(c.MinTokens))
+	}
+	return args
 }
 
 func (c standaloneConfig) aliasesConfig() ([]string, error) {

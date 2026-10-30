@@ -1,11 +1,11 @@
 # Experimental Go server
 
 This is an opt-in experiment, not a replacement for the Python server. It is
-not connected to `strata launch` or the desktop app. It accepts text-only Qwen
-and DeepSeek V4.1 requests at `POST /v1/chat/completions`, with streaming and a
+not connected to `strata launch` or the desktop app. It accepts Qwen and
+DeepSeek V4.1 requests at `POST /v1/chat/completions`, with streaming and a
 limited set of request fields, lists the model at `GET /v1/models` and
 `GET /models`, and reports
-health at `GET /health` and `GET /api/health`. It also accepts text-only
+health at `GET /health` and `GET /api/health`. It also accepts
 Anthropic requests at `POST /v1/messages`, including streaming, and counts
 prompts at `POST /v1/messages/count_tokens` without running generation.
 As in Python, requests naming another model use the loaded model. Configure
@@ -13,11 +13,10 @@ As in Python, requests naming another model use the loaded model. Configure
 comma-separated string. Aliases are trimmed, deduplicated, and listed at
 `/v1/models`; requests naming an alias report that alias, while unknown names
 report the loaded model name.
-It also accepts stateless text-only requests at `POST /v1/responses`, with
+It also accepts stateless requests at `POST /v1/responses`, with
 named streaming events, reasoning, stop strings, and completed function and
 custom tool calls. Hosted and unknown tools are left out and a warning is
-logged; the server does not run them. Stored responses and images are not
-supported.
+logged; the server does not run them. Stored responses are not supported.
 As in the Python server, `store: true` is accepted but responses are not stored.
 Codex client metadata is accepted; the optional Codex thread-title and
 compaction-cache behaviors are not implemented.
@@ -35,7 +34,7 @@ requests that do not ask for it; the default is `model`.
 As in the
 Python Responses route, Responses `tool_choice: none` removes tools; other
 choices are accepted but do not force a tool. Incomplete tool calls are not
-streamed. All APIs reject images and use the renderer limits below. Other
+streamed. Image support and renderer limits are described below. Other
 endpoints and model families are not implemented.
 Chat, Responses and Anthropic sampling supports temperature, top-p, top-k, min-p, repetition,
 frequency and presence penalties, penalty window, and seed.
@@ -95,6 +94,20 @@ not supported. Other config fields are rejected rather than silently ignored.
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.
 This path has not been validated with every Python config.
+
+Qwen image input can use the existing native `strata-vision` reader when the
+standalone config has a `vision` object with `exe`, `mmproj`, and `model`
+paths. The optional `gpu`, `threads`, `max_tokens`, and `min_tokens` settings
+are supported. Relative paths are resolved against the config's `cwd`. The
+server starts the reader before the engine and adds `--vision` to the engine
+arguments. Chat, Anthropic and Responses accept image inputs as data URLs,
+HTTP(S) URLs, or local files; foreign-origin web pages cannot read local
+files. The reader and engine take turns, including for text-only requests.
+The server limits image data to 32 MiB per image and the request body to
+48 MiB when vision is enabled. The native reader handles image decoding;
+unlike Python with Pillow, this server does not convert other formats or apply
+EXIF orientation. DeepSeek image input is not supported. Real vision model
+inference has not yet been validated.
 
 An interrupted generation or engine protocol error discards the engine
 process. The next request starts it again; the failed request is not retried.

@@ -23,6 +23,7 @@ import (
 	"strata/requestnorm"
 	"strata/serve-go/modeltokenizer"
 	"strata/server"
+	"strata/server/vision"
 )
 
 type args []string
@@ -61,11 +62,15 @@ func run() error {
 	var anthropicThinkingOnRequest bool
 	var disableAnswerRoom bool
 	var disableFitMaxTokens bool
+	var standaloneVision *standaloneVisionConfig
+	var visionArgs []string
+	var standalone *standaloneConfig
 	if *configPath != "" {
 		cfg, err := readStandaloneConfig(*configPath)
 		if err != nil {
 			return err
 		}
+		standalone = &cfg
 		defaultReasoningBudget, disableAnswerRoom, err = cfg.thinkingConfig()
 		if err != nil {
 			return err
@@ -130,6 +135,30 @@ func run() error {
 	if selectedFamily != requestnorm.FamilyQwen && selectedFamily != requestnorm.FamilyDeepSeek {
 		return fmt.Errorf("unsupported model family %q", *family)
 	}
+	var err error
+	if *configPath != "" {
+		standaloneVision, visionArgs, err = standalone.visionConfig(selectedFamily)
+		if err != nil {
+			return fmt.Errorf("invalid config: %w", err)
+		}
+		if standaloneVision != nil {
+			hasVision, hasReserve := false, false
+			for _, arg := range engineArgs {
+				if arg == "--vision" {
+					hasVision = true
+				}
+				if arg == "--vram-reserve-mib" {
+					hasReserve = true
+				}
+			}
+			if !hasVision {
+				engineArgs = append(engineArgs, "--vision")
+				if standaloneVision.GPU && !hasReserve {
+					engineArgs = append(engineArgs, "--vram-reserve-mib", "700")
+				}
+			}
+		}
+	}
 	host, _, err := net.SplitHostPort(*listen)
 	if err != nil {
 		return err
@@ -191,6 +220,20 @@ func run() error {
 	if ctx.Err() != nil {
 		return nil
 	}
+	var visionReader *vision.Reader
+	if standaloneVision != nil {
+		visionCtx, visionCancel := context.WithTimeout(ctx, 300*time.Second)
+		visionReader, err = vision.StartWithEnv(visionCtx, visionArgs[0], visionArgs[1:], processConfig.Env)
+		visionCancel()
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := visionReader.Close(); err != nil {
+				log.Printf("vision close: %v", err)
+			}
+		}()
+	}
 	eng, err := start(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && !errors.Is(err, engine.ErrUnreaped) {
@@ -211,7 +254,15 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort})
+	maxBody := int64(2 << 20)
+	if visionReader != nil {
+		maxBody = 48 << 20
+	}
+	serverConfig := server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: maxBody, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort}
+	if visionReader != nil {
+		serverConfig.Vision = visionReader
+	}
+	handler, err := server.New(serverConfig)
 	if err != nil {
 		return err
 	}

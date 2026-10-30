@@ -303,8 +303,9 @@ type Sampling struct {
 // protocol order, after the token is appended to Result and before DONE.
 // It must not call Generate or Close on the same Engine.
 type RequestOptions struct {
-	Sampling Sampling
-	OnToken  func(int) error
+	Sampling       Sampling
+	EmbeddingsPath string
+	OnToken        func(int) error
 }
 
 func samplingKeys(s Sampling) (string, error) {
@@ -381,16 +382,28 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 }
 
 func generationCommand(ids []int, maxNew int, keys string) (string, error) {
+	return generationCommandWithEmbeddings(ids, maxNew, keys, "")
+}
+
+func generationCommandWithEmbeddings(ids []int, maxNew int, keys, embeddingsPath string) (string, error) {
 	if maxNew < 1 || len(ids) == 0 {
 		return "", errors.New("GEN requires positive maxNew and at least one token")
 	}
 	var command strings.Builder
-	command.Grow(16 + len(keys) + len(ids)*7)
-	command.WriteString("GEN ")
+	command.Grow(17 + len(keys) + len(embeddingsPath) + len(ids)*7)
+	if embeddingsPath != "" {
+		command.WriteString("GENI ")
+	} else {
+		command.WriteString("GEN ")
+	}
 	var number [32]byte
 	command.Write(strconv.AppendInt(number[:0], int64(maxNew), 10))
 	command.WriteString(keys)
 	command.WriteByte(' ')
+	if embeddingsPath != "" {
+		command.WriteString(embeddingsPath)
+		command.WriteByte(' ')
+	}
 	for i, id := range ids {
 		if id < 0 || int64(id) > 2147483647 {
 			return "", errors.New("token ID outside nonnegative int32 range")
@@ -404,7 +417,14 @@ func generationCommand(ids []int, maxNew int, keys string) (string, error) {
 	return command.String(), nil
 }
 
-// GenerateWithOptions sends a text-only GEN. ErrStopGeneration from a callback
+func generationImageCommand(ids []int, maxNew int, keys, embeddingsPath string) (string, error) {
+	if strings.ContainsAny(embeddingsPath, " \t\r\n\v\f=\x00") {
+		return "", errors.New("invalid embeddings path")
+	}
+	return generationCommandWithEmbeddings(ids, maxNew, keys, embeddingsPath)
+}
+
+// GenerateWithOptions sends GEN or GENI. ErrStopGeneration from a callback
 // stops and drains the request; other callback errors discard the process.
 // Cancellation has the same STOP and discard behavior as Generate; no further
 // callbacks run after cancellation is observed. A callback panic discards the
@@ -415,7 +435,12 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	if err != nil {
 		return result, err
 	}
-	command, err := generationCommand(ids, maxNew, keys)
+	var command string
+	if opts.EmbeddingsPath == "" {
+		command, err = generationCommand(ids, maxNew, keys)
+	} else {
+		command, err = generationImageCommand(ids, maxNew, keys, opts.EmbeddingsPath)
+	}
 	if err != nil {
 		return result, err
 	}

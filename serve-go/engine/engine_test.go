@@ -122,7 +122,7 @@ func TestHelperProcess(t *testing.T) {
 		if line == "QUIT" {
 			os.Exit(0)
 		}
-		if strings.HasPrefix(line, "GEN ") {
+		if strings.HasPrefix(line, "GEN ") || strings.HasPrefix(line, "GENI ") {
 			requests++
 			switch mode {
 			case "early-stop":
@@ -152,6 +152,12 @@ func TestHelperProcess(t *testing.T) {
 				}
 				fmt.Println("T 43")
 				fmt.Println("DONE 2 2 1 2 stop")
+			case "geni":
+				if line != "GENI 3 temperature=0.7 top_p=0.9 top_k=64 min_p=0.1 penalty_repeat=1.1 penalty_freq=-0.5 penalty_present=0.2 penalty_last_n=64 seed=123 /tmp/vision.bin 12,34" {
+					fmt.Println("ERR unexpected command")
+					continue
+				}
+				fmt.Println("DONE 0 2 1 2 stop")
 			case "callback-error", "callback-cancel", "callback-panic":
 				fmt.Println("T 42")
 				if mode == "callback-cancel" {
@@ -209,6 +215,36 @@ func TestHelperProcess(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestGenerationImageCommandAndPathValidation(t *testing.T) {
+	temp, topP, minP := 0.7, 0.9, 0.1
+	topK, lastN := 64, 64
+	repeat, frequency, presence := 1.1, -0.5, 0.2
+	seed := uint64(123)
+	e := startFake(t, "geni", &bytes.Buffer{})
+	_, err := e.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{
+		EmbeddingsPath: "/tmp/vision.bin",
+		Sampling:       Sampling{Temperature: &temp, TopP: &topP, TopK: &topK, MinP: &minP, RepetitionPenalty: &repeat, FrequencyPenalty: &frequency, PresencePenalty: &presence, PenaltyLastN: &lastN, Seed: &seed},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInvalidEmbeddingsPathRejectedBeforePipe(t *testing.T) {
+	for _, path := range []string{"/tmp/a b", "/tmp/a=b", "/tmp/a\nb", "/tmp/a\rb", "/tmp/a\tb", "/tmp/a\x00b"} {
+		t.Run(strconv.Quote(path), func(t *testing.T) {
+			e := startFake(t, "normal", &bytes.Buffer{})
+			_, err := e.GenerateWithOptions(testContext(t), []int{1}, 1, RequestOptions{EmbeddingsPath: path})
+			if err == nil || !e.Alive() {
+				t.Fatalf("error=%v alive=%v; want pre-pipe validation with child alive", err, e.Alive())
+			}
+			if err := e.Close(testContext(t)); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 
 func TestProcessConfig(t *testing.T) {

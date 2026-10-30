@@ -62,6 +62,10 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 }
 
 func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error, repeatLimit ...int) (generationResult, error) {
+	return generateWithEmbeddings(ctx, e, tokenizer, parser, ids, max, sampling, stopIDs, budget, force, callback, "", repeatLimit...)
+}
+
+func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error, embeddings string, repeatLimit ...int) (generationResult, error) {
 	var out generationResult
 	decoder := streamtext.Decoder{}
 	stoppedToken := false
@@ -90,7 +94,7 @@ func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.
 	for {
 		var segment []int
 		wrap, opens := false, false
-		result, err := e.GenerateWithOptions(ctx, prompt, max-out.count, engine.RequestOptions{Sampling: sampling, OnToken: func(id int) error {
+		result, err := e.GenerateWithOptions(ctx, prompt, max-out.count, engine.RequestOptions{Sampling: sampling, EmbeddingsPath: embeddings, OnToken: func(id int) error {
 			out.count++
 			if out.count > max {
 				return errors.New("engine exceeded output token limit")

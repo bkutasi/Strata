@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"strata/requestnorm"
 )
 
 func TestSplitJoinedConfigArgs(t *testing.T) {
@@ -108,7 +110,6 @@ func TestStandaloneAliasesConfig(t *testing.T) {
 
 func TestStandaloneConfigRejectsUnknownAndTrailingData(t *testing.T) {
 	for _, data := range []string{
-		`{"exe":"e","tokenizer":"t","model_name":"m","vision":{}}`,
 		`{"exe":"e","tokenizer":"t","model_name":"m"} {}`,
 		`{"exe":"e","tokenizer":"t"}`,
 	} {
@@ -120,6 +121,75 @@ func TestStandaloneConfigRejectsUnknownAndTrailingData(t *testing.T) {
 			t.Fatalf("accepted invalid config %s", data)
 		}
 	}
+}
+
+func TestStandaloneVisionConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		field  string
+		family string
+		want   []string
+		ok     bool
+	}{
+		{"cpu defaults", `"vision":{"exe":"reader","mmproj":"mm/model.gguf","model":"weights/model.gguf"}`, "qwen",
+			[]string{filepath.Join(mustGetwd(t), "reader"), "--mmproj", filepath.Join(mustGetwd(t), "mm/model.gguf"), "--model", filepath.Join(mustGetwd(t), "weights/model.gguf"), "--max-tokens", "300"}, true},
+		{"gpu defaults", `"vision":{"exe":"reader","mmproj":"mm.gguf","model":"model.gguf","gpu":true}`, "qwen",
+			[]string{filepath.Join(mustGetwd(t), "reader"), "--mmproj", filepath.Join(mustGetwd(t), "mm.gguf"), "--model", filepath.Join(mustGetwd(t), "model.gguf"), "--gpu", "--max-tokens", "1024"}, true},
+		{"zero limit omitted", `"vision":{"exe":"reader","mmproj":"mm.gguf","model":"model.gguf","max_tokens":0}`, "qwen",
+			[]string{filepath.Join(mustGetwd(t), "reader"), "--mmproj", filepath.Join(mustGetwd(t), "mm.gguf"), "--model", filepath.Join(mustGetwd(t), "model.gguf")}, true},
+		{"unsupported field", `"vision":{"exe":"reader","mmproj":"m","model":"w","lazy":true}`, "qwen", nil, false},
+		{"deepseek rejected", `"vision":{"exe":"reader","mmproj":"m","model":"w"}`, "deepseek41", nil, false},
+		{"missing required", `"vision":{"exe":"reader","mmproj":"m"}`, "qwen", nil, false},
+		{"bad threads", `"vision":{"exe":"reader","mmproj":"m","model":"w","threads":-1}`, "qwen", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			data := `{"exe":"e","tokenizer":"t","model_name":"m",` + tc.field + `}`
+			if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := readStandaloneConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			family := requestnorm.FamilyQwen
+			if tc.family == "deepseek41" {
+				family = requestnorm.FamilyDeepSeek
+			}
+			_, args, err := cfg.visionConfig(family)
+			if (err == nil) != tc.ok {
+				t.Fatalf("visionConfig error = %v, want ok=%v", err, tc.ok)
+			}
+			if tc.ok && !reflect.DeepEqual(args, tc.want) {
+				t.Fatalf("vision args = %#v, want %#v", args, tc.want)
+			}
+		})
+	}
+}
+
+func TestStandaloneVisionPathsUseConfigCwd(t *testing.T) {
+	dir := t.TempDir()
+	cfg := standaloneConfig{Cwd: dir, Vision: json.RawMessage(`{"exe":"reader","mmproj":"mm.gguf","model":"model.gguf"}`)}
+	visionCfg, args, err := cfg.visionConfig(requestnorm.FamilyQwen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(dir, "reader"), "--mmproj", filepath.Join(dir, "mm.gguf"), "--model", filepath.Join(dir, "model.gguf"), "--max-tokens", "300"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("vision args = %#v, want %#v", args, want)
+	}
+	if visionCfg.Exe != want[0] || visionCfg.MMProj != want[2] || visionCfg.Model != want[4] {
+		t.Fatalf("resolved vision config = %+v", visionCfg)
+	}
+}
+
+func mustGetwd(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestOptionalStandaloneConfig(t *testing.T) {
