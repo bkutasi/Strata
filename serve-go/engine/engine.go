@@ -333,16 +333,18 @@ type LogprobAlternative struct {
 
 // RequestOptions configures a text request. OnProgress runs synchronously while
 // waiting for the engine, for native PP records and periodically during generation.
+// OnPromptProgress receives the native prompt position and total, when available.
 // OnToken runs synchronously in protocol order, after the token is appended to
 // Result and before DONE.
 // OnLogprob runs immediately before OnToken, with nil if no LP was emitted.
 // Callbacks must not call Generate or Close on the same Engine.
 type RequestOptions struct {
-	Sampling       Sampling
-	EmbeddingsPath string
-	OnProgress     func() error
-	OnToken        func(int) error
-	OnLogprob      func(int, *Logprob) error
+	Sampling         Sampling
+	EmbeddingsPath   string
+	OnProgress       func() error
+	OnPromptProgress func(int, int)
+	OnToken          func(int) error
+	OnLogprob        func(int, *Logprob) error
 }
 
 func samplingKeys(s Sampling) (string, error) {
@@ -839,6 +841,22 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				}
 			case "PP", "RESUME", "REUSED":
 				if f[0] == "PP" {
+					if !stopping && cancelled == nil && ctx.Err() == nil && opts.OnPromptProgress != nil && len(f) >= 3 {
+						current, err1 := strconv.Atoi(f[1])
+						total, err2 := strconv.Atoi(f[2])
+						if err1 == nil && err2 == nil && current >= 0 && total > 0 && current <= total {
+							func() {
+								returned := false
+								defer func() {
+									if !returned {
+										e.abort()
+									}
+								}()
+								opts.OnPromptProgress(current, total)
+								returned = true
+							}()
+						}
+					}
 					if err := progress(); err != nil {
 						return result, err
 					}

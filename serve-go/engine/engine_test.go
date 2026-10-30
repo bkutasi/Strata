@@ -709,15 +709,19 @@ func TestProgressCallbackPipeAndFailure(t *testing.T) {
 	t.Run("acknowledges before DONE", func(t *testing.T) {
 		e := startFake(t, "progress-ack", &bytes.Buffer{})
 		called := false
+		var current, total int
 		_, err := e.GenerateWithOptions(testContext(t), []int{1}, 1, RequestOptions{
+			OnPromptProgress: func(read, all int) {
+				current, total = read, all
+			},
 			OnProgress: func() error {
 				called = true
 				_, err := io.WriteString(e.stdin, "ACK\n")
 				return err
 			},
 		})
-		if err != nil || !called {
-			t.Fatalf("called=%v error=%v", called, err)
+		if err != nil || !called || current != 1 || total != 2 {
+			t.Fatalf("called=%v progress=%d/%d error=%v", called, current, total, err)
 		}
 	})
 
@@ -737,6 +741,28 @@ func TestProgressCallbackPipeAndFailure(t *testing.T) {
 			}
 		case <-testContext(t).Done():
 			t.Fatal("progress callback error left child running")
+		}
+	})
+
+	t.Run("prompt progress panic reaps child", func(t *testing.T) {
+		e := startFake(t, "progress-ack", &bytes.Buffer{})
+		panicked := false
+		func() {
+			defer func() { panicked = recover() == "progress panic" }()
+			_, _ = e.GenerateWithOptions(testContext(t), []int{1}, 1, RequestOptions{
+				OnPromptProgress: func(int, int) { panic("progress panic") },
+			})
+		}()
+		if !panicked {
+			t.Fatal("progress callback panic did not propagate")
+		}
+		select {
+		case <-e.exited:
+			if e.cmd.ProcessState == nil {
+				t.Fatal("child was not reaped")
+			}
+		case <-testContext(t).Done():
+			t.Fatal("progress callback panic left child running")
 		}
 	})
 }
