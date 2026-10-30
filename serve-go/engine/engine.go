@@ -380,6 +380,30 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 	return e.GenerateWithOptions(ctx, ids, maxNew, RequestOptions{})
 }
 
+func generationCommand(ids []int, maxNew int, keys string) (string, error) {
+	if maxNew < 1 || len(ids) == 0 {
+		return "", errors.New("GEN requires positive maxNew and at least one token")
+	}
+	var command strings.Builder
+	command.Grow(16 + len(keys) + len(ids)*7)
+	command.WriteString("GEN ")
+	var number [32]byte
+	command.Write(strconv.AppendInt(number[:0], int64(maxNew), 10))
+	command.WriteString(keys)
+	command.WriteByte(' ')
+	for i, id := range ids {
+		if id < 0 || int64(id) > 2147483647 {
+			return "", errors.New("token ID outside nonnegative int32 range")
+		}
+		if i > 0 {
+			command.WriteByte(',')
+		}
+		command.Write(strconv.AppendInt(number[:0], int64(id), 10))
+	}
+	command.WriteByte('\n')
+	return command.String(), nil
+}
+
 // GenerateWithOptions sends a text-only GEN. ErrStopGeneration from a callback
 // stops and drains the request; other callback errors discard the process.
 // Cancellation has the same STOP and discard behavior as Generate; no further
@@ -387,17 +411,11 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 // process and propagates. Callbacks must return promptly.
 func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int, opts RequestOptions) (Result, error) {
 	var result Result
-	if maxNew < 1 || len(ids) == 0 {
-		return result, errors.New("GEN requires positive maxNew and at least one token")
-	}
-	tokens := make([]string, len(ids))
-	for i, id := range ids {
-		if id < 0 || int64(id) > 2147483647 {
-			return result, errors.New("token ID outside nonnegative int32 range")
-		}
-		tokens[i] = strconv.Itoa(id)
-	}
 	keys, err := samplingKeys(opts.Sampling)
+	if err != nil {
+		return result, err
+	}
+	command, err := generationCommand(ids, maxNew, keys)
 	if err != nil {
 		return result, err
 	}
@@ -411,7 +429,7 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	default:
 	}
 	e.idle.Store(false)
-	if err := e.writeCommand(ctx, fmt.Sprintf("GEN %d%s %s\n", maxNew, keys, strings.Join(tokens, ","))); err != nil {
+	if err := e.writeCommand(ctx, command); err != nil {
 		return result, err
 	}
 	var cancel <-chan time.Time

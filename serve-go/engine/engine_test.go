@@ -9,10 +9,56 @@ import (
 	"io"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestGenerationCommand(t *testing.T) {
+	got, err := generationCommand([]int{0, 12, 2147483647}, 42, " temperature=0.7")
+	if err != nil || got != "GEN 42 temperature=0.7 0,12,2147483647\n" {
+		t.Fatalf("command %q: %v", got, err)
+	}
+	for _, tc := range []struct {
+		ids []int
+		max int
+	}{
+		{nil, 1},
+		{[]int{1}, 0},
+		{[]int{-1}, 1},
+		{[]int{2147483648}, 1},
+	} {
+		if _, err := generationCommand(tc.ids, tc.max, ""); err == nil {
+			t.Fatalf("accepted invalid command: %+v", tc)
+		}
+	}
+}
+
+func BenchmarkGenerationCommand(b *testing.B) {
+	ids := make([]int, 262144)
+	for i := range ids {
+		ids[i] = 100000 + i%100000
+	}
+	b.Run("previous", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			tokens := make([]string, len(ids))
+			for j, id := range ids {
+				tokens[j] = strconv.Itoa(id)
+			}
+			_ = fmt.Sprintf("GEN %d%s %s\n", 128, "", strings.Join(tokens, ","))
+		}
+	})
+	b.Run("current", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := generationCommand(ids, 128, ""); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
 
 // The test binary is the child: all synchronization is via pipes, not sleeps.
 func TestHelperProcess(t *testing.T) {
