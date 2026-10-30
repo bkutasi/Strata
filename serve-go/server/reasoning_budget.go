@@ -40,21 +40,25 @@ func reasoningBudget(root, value requestnorm.Value) (int, error) {
 	return 0, errors.New("reasoning_budget_tokens must be a whole number")
 }
 
-func effectiveReasoningBudget(family requestnorm.Family, thinking bool, max, budget int) int {
+func (s *server) effectiveReasoningBudget(thinking bool, max, budget int) int {
 	if !thinking {
 		return 0
 	}
 	if budget < 0 {
-		budget = 0
-		if family == requestnorm.FamilyDeepSeek {
+		switch {
+		case s.cfg.DefaultReasoningBudget != nil:
+			budget = maxInt(0, *s.cfg.DefaultReasoningBudget)
+		case s.cfg.Family == requestnorm.FamilyDeepSeek:
 			budget = 32768
+		default:
+			budget = 0
 		}
 	}
 	reserve := min(maxInt(512, max/4), max/2)
-	if budget == 0 && max >= 1024 {
+	if budget == 0 && !s.cfg.DisableAnswerRoom && max >= 1024 {
 		budget = max - reserve
 	}
-	if budget == 0 && family == requestnorm.FamilyDeepSeek && max >= 48 && max < 1024 {
+	if budget == 0 && !s.cfg.DisableAnswerRoom && s.cfg.Family == requestnorm.FamilyDeepSeek && max >= 48 && max < 1024 {
 		budget = max / 2
 	}
 	if budget > 0 {

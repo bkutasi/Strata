@@ -58,3 +58,27 @@ func TestOptionalStandaloneConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStandaloneThinkingConfig(t *testing.T) {
+	for _, tc := range []struct {
+		fields string
+		ok     bool
+	}{
+		{`"reasoning_budget_tokens":20,"answer_room":false`, true},
+		{`"reasoning_budget_tokens":0.0,"answer_room":null`, true},
+		{`"reasoning_budget_tokens":-1,"answer_room":"false"`, true},
+		{`"reasoning_budget_tokens":true`, false},
+		{`"reasoning_budget_tokens":1.5`, false},
+		{`"reasoning_budget_tokens":"20"`, false},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		data := `{"exe":"e","tokenizer":"t","model_name":"m",` + tc.fields + `}`
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := readStandaloneConfig(path)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: error %v, want ok=%v", tc.fields, err, tc.ok)
+		}
+	}
+}

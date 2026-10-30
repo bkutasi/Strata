@@ -21,8 +21,8 @@ argument object keys may be reordered by the parser.
 The APIs support `auto` and `none` tool choices. Chat and Anthropic requests
 also support forced or named choices with or without thinking. A positive request reasoning budget closes
 thinking and continues the answer; zero or negative disables the explicit
-limit. As in Python, automatic answer-room limits can still apply. Configured
-default budgets and disabling answer-room through config are not supported.
+limit. As in Python, automatic answer-room limits can still apply. The run
+config supports `reasoning_budget_tokens` and `answer_room: false`.
 As in the
 Python Responses route, Responses `tool_choice: none` removes tools; other
 choices are accepted but do not force a tool. Incomplete tool calls are not
@@ -67,7 +67,8 @@ The server also accepts a limited standalone Python JSON run config:
 For compatibility with the Python command, `--engine strata` can also be
 given with `--config`; the executable still comes from the config.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
-integer `gpu`, string-valued `env`, and `log`. Other config fields are rejected
+integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens` and
+`answer_room`. Other config fields are rejected
 rather than silently ignored. `--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.

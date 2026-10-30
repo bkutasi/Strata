@@ -52,8 +52,14 @@ func run() error {
 	var processConfig engine.ProcessConfig
 	var engineLog io.Writer = os.Stderr
 	var configuredKey string
+	var defaultReasoningBudget *int
+	var disableAnswerRoom bool
 	if *configPath != "" {
 		cfg, err := readStandaloneConfig(*configPath)
+		if err != nil {
+			return err
+		}
+		defaultReasoningBudget, disableAnswerRoom, err = cfg.thinkingConfig()
 		if err != nil {
 			return err
 		}
@@ -181,7 +187,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4})
+	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom})
 	if err != nil {
 		return err
 	}

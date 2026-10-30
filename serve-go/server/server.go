@@ -25,16 +25,18 @@ import (
 )
 
 type Config struct {
-	Model           string
-	Family          requestnorm.Family
-	Tokenizer       *modeltokenizer.Tokenizer
-	Engine          Engine
-	Renderer        Renderer
-	APIKeys         []string
-	MaxBody         int64
-	MaxPromptBytes  int
-	MaxOutputTokens int
-	MaxConcurrent   int
+	Model                  string
+	Family                 requestnorm.Family
+	Tokenizer              *modeltokenizer.Tokenizer
+	Engine                 Engine
+	Renderer               Renderer
+	APIKeys                []string
+	MaxBody                int64
+	MaxPromptBytes         int
+	MaxOutputTokens        int
+	MaxConcurrent          int
+	DefaultReasoningBudget *int
+	DisableAnswerRoom      bool
 }
 
 // Engine is the native generation service used by the handler.
@@ -389,7 +391,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	opt.budget = effectiveReasoningBudget(s.cfg.Family, rendered.Thinking, opt.max, opt.budget)
+	opt.budget = s.effectiveReasoningBudget(rendered.Thinking, opt.max, opt.budget)
 	var tools []map[string]any
 	for _, v := range input.Tools {
 		b, e := v.MarshalJSON()
