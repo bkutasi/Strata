@@ -215,6 +215,11 @@ func (p *Parser) Status() Status {
 	return Status{p.state, clean, len(p.pending), p.unread, append([]string(nil), p.unreadNames...), p.rescued, p.refused}
 }
 
+// HeldThinkEnd reports a closing tag waiting for the following character.
+func (p *Parser) HeldThinkEnd() bool {
+	return p.state == "reasoning" && p.buf == thinkEnd
+}
+
 func space(r rune) bool      { return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f }
 func lstrip(s string) string { return strings.TrimLeftFunc(s, space) }
 func strip(s string) string  { return strings.TrimFunc(s, space) }

@@ -111,7 +111,7 @@ func appendForcedPrompt(tok *modeltokenizer.Tokenizer, rendered Rendered, ids []
 		return ids, nil
 	}
 	if rendered.Thinking {
-		return nil, errors.New("forced tool choice with thinking is not supported")
+		return ids, nil
 	}
 	if len(rendered.Prompt) > maxBytes || len(force) > maxBytes-len(rendered.Prompt) {
 		return nil, errors.New("prompt too large")

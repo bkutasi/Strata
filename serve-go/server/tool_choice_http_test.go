@@ -111,7 +111,7 @@ func TestToolChoiceHTTP(t *testing.T) {
 				{"none object", `"tool_choice":{"type":"none"},`, "omitted", 0, http.StatusOK},
 				{"auto string", `"tool_choice":"auto",`, "offered", 1, http.StatusOK},
 				{"auto object", `"tool_choice":{"type":"auto"},`, "offered", 1, http.StatusOK},
-				{"required unsupported", `"tool_choice":"required",`, "", 0, http.StatusBadRequest},
+				{"required", `"tool_choice":"required",`, "offered", 1, http.StatusOK},
 			} {
 				t.Run(api.name+"/"+choice.name+"/stream="+map[bool]string{false: "false", true: "true"}[stream], func(t *testing.T) {
 					body := api.prefix + streamField + choice.value + api.tools + `,"model":"test"}`

@@ -81,7 +81,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var opening []outputparser.Event
-	if opt.force != "" {
+	if opt.force != "" && !rendered.Thinking {
 		opening, err = parser.Feed(opt.force)
 		if err != nil {
 			fail(w, 400, "invalid_request_error", err.Error())
@@ -163,7 +163,11 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 	err = route(opening)
 	var result generationResult
 	if err == nil {
-		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, route)
+		force := ""
+		if rendered.Thinking {
+			force = opt.force
+		}
+		result, err = generateWithForce(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

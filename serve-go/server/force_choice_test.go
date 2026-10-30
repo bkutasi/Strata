@@ -186,7 +186,6 @@ func TestForcedPromptRespectsLimits(t *testing.T) {
 		rendered Rendered
 		limit    int
 	}{
-		{Rendered{Prompt: "Hi", Thinking: true}, 20},
 		{prompt, 2},
 	} {
 		if _, err := appendForcedPrompt(tok, tc.rendered, []int{'H', 'i'}, "x", tc.limit); err == nil {

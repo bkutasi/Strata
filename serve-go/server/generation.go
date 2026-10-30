@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"strata/engine"
 	"strata/outputparser"
@@ -56,11 +57,15 @@ const reasoningWrapUp = "\n\nI have thought about this long enough; time to give
 // generate pumps tokens through the parser and resumes after a thinking budget.
 // The callback may return stopGeneration to drain inference.
 func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, callback func([]outputparser.Event) error) (generationResult, error) {
+	return generateWithForce(ctx, e, tokenizer, parser, ids, max, sampling, stopIDs, budget, "", callback)
+}
+
+func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error) (generationResult, error) {
 	var out generationResult
 	decoder := streamtext.Decoder{}
 	stoppedToken := false
 	status, hasStatus := parser.(interface{ Status() outputparser.Status })
-	if budget > 0 {
+	if budget > 0 || force != "" {
 		if !hasStatus {
 			return out, errors.New("reasoning budget requires parser status")
 		}
@@ -74,10 +79,11 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 	}
 	prompt := ids
 	thought := 0
+	tail := ""
 	first := true
 	for {
 		var segment []int
-		wrap := false
+		wrap, opens := false, false
 		result, err := e.GenerateWithOptions(ctx, prompt, max-out.count, engine.RequestOptions{Sampling: sampling, OnToken: func(id int) error {
 			out.count++
 			if out.count > max {
@@ -87,19 +93,37 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 				return nil
 			}
 			if stopIDs[id] {
+				if force != "" {
+					if held, ok := parser.(interface{ HeldThinkEnd() bool }); ok && held.HeldThinkEnd() {
+						opens = true
+						return engine.ErrStopGeneration
+					}
+				}
 				stoppedToken = true
 				return engine.ErrStopGeneration
 			}
-			if budget > 0 {
+			if budget > 0 || force != "" {
 				segment = append(segment, id)
 			}
 			raw, err := tokenizer.TokenBytes(id)
 			if err != nil {
 				return err
 			}
-			events, err := parser.Feed(decoder.Push(raw))
+			piece := decoder.Push(raw)
+			tail += piece
+			if len(tail) > 2 {
+				tail = tail[len(tail)-2:]
+			}
+			events, err := parser.Feed(piece)
 			if err != nil {
 				return err
+			}
+			if force != "" {
+				for _, event := range events {
+					if event.Kind == "tool_start" || event.Kind == "tool_call" {
+						force = ""
+					}
+				}
 			}
 			err = callback(events)
 			if errors.Is(err, stopGeneration) {
@@ -119,6 +143,13 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 					}
 				}
 			}
+			if force != "" {
+				state := status.Status()
+				if state.State == "content" && state.Clean && !decoder.Pending() {
+					opens = true
+					return engine.ErrStopGeneration
+				}
+			}
 			return nil
 		}})
 		if errors.Is(err, engine.ErrStopGeneration) {
@@ -129,7 +160,7 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 		}
 		if first {
 			out.result = result
-			out.cached, err = cachedPromptTokens(result, len(ids), stoppedToken || wrap)
+			out.cached, err = cachedPromptTokens(result, len(ids), stoppedToken || wrap || opens)
 			if err != nil {
 				return out, err
 			}
@@ -139,11 +170,17 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 				return out, err
 			}
 		}
-		if !wrap {
+		if !wrap && !opens {
 			break
 		}
 		out.result.Tokens = nil
-		extra, err := tokenizer.Encode(reasoningWrapUp, true, nil)
+		text := reasoningWrapUp
+		if opens {
+			text = strings.Repeat("\n", 2-len(tail)+len(strings.TrimRight(tail, "\n")))
+		}
+		text += force
+		force = ""
+		extra, err := tokenizer.Encode(text, true, nil)
 		if err != nil {
 			return out, err
 		}

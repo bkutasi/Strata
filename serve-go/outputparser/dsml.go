@@ -252,5 +252,9 @@ func (p *DeepSeekParser) Status() Status {
 	return status
 }
 
+func (p *DeepSeekParser) HeldThinkEnd() bool {
+	return p.translator.pending == "" && p.parser.HeldThinkEnd()
+}
+
 // ReasoningFallback reports whether a natural stop used reasoning as the answer.
 func (p *DeepSeekParser) ReasoningFallback() bool { return p.fallback }
