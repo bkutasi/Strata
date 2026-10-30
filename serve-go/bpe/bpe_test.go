@@ -36,13 +36,43 @@ func TestMergeRanksGroupedAndDuplicate(t *testing.T) {
 			}
 		}
 	}
-	if len(tok.ranks) != len(want) {
-		t.Fatalf("retained %d ranks, want %d", len(tok.ranks), len(want))
+	if len(tok.compactRanks) != 6*len(want) || tok.ranks != nil {
+		t.Fatalf("compact rank bytes = %d, wide entries = %d", len(tok.compactRanks), len(tok.ranks))
 	}
 	// Last duplicate rank makes "bc" merge before "ab".
 	ids, err := tok.Encode("abc", false, nil)
 	if err != nil || !reflect.DeepEqual(ids, []int{0, 6}) {
 		t.Fatalf("encode = %v, %v; want [0 6]", ids, err)
+	}
+}
+
+func TestWideMergeRankLookup(t *testing.T) {
+	tok, err := New([]string{"a", "b", "c"}, []string{"a c", "a b", "b c"}, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wide := make([]rankEntry, len(tok.compactRanks)/6)
+	for i := range wide {
+		wide[i] = tok.rankAt(i)
+	}
+	tok.ranks = wide
+	tok.compactRanks = nil
+	for _, tc := range []struct {
+		left, right, rank uint32
+		ok                bool
+	}{{0, 1, 1, true}, {0, 2, 0, true}, {1, 2, 2, true}, {2, 1, 0, false}} {
+		got, ok := tok.mergeRank(tc.left, tc.right)
+		if got != tc.rank || ok != tc.ok {
+			t.Fatalf("rank(%d,%d) = %d, %v; want %d, %v", tc.left, tc.right, got, ok, tc.rank, tc.ok)
+		}
+	}
+}
+
+func TestCompactMergeRankEntryBytes(t *testing.T) {
+	tok := &Tokenizer{compactRanks: []byte{0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa}}
+	got := tok.rankAt(0)
+	if got.right != 0xfdfeff || got.rank != 0xfafbfc {
+		t.Fatalf("compact entry = %#v", got)
 	}
 }
 

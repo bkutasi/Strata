@@ -31,17 +31,18 @@ type literal struct {
 // Tokenizer is immutable after construction and safe for concurrent use if its
 // supplied Splitter is also safe for concurrent use.
 type Tokenizer struct {
-	tokens      string
-	offsets     []uint32
-	wideOffsets []int
-	special     []bool
-	ids         []byte // 24-bit ID+1 slots; zero is empty
-	wideIDs     []uint32
-	seed        maphash.Seed
-	rankOffsets []uint32
-	ranks       []rankEntry
-	literals    []literal
-	split       Splitter
+	tokens       string
+	offsets      []uint32
+	wideOffsets  []int
+	special      []bool
+	ids          []byte // 24-bit ID+1 slots; zero is empty
+	wideIDs      []uint32
+	seed         maphash.Seed
+	rankOffsets  []uint32
+	ranks        []rankEntry
+	compactRanks []byte
+	literals     []literal
+	split        Splitter
 }
 
 // VocabularySize returns the number of token IDs.
@@ -131,13 +132,28 @@ func (t *Tokenizer) tokenID(s string) (uint32, bool) {
 	return id, ok
 }
 
+func (t *Tokenizer) rankAt(i int) rankEntry {
+	if t.ranks != nil {
+		return t.ranks[i]
+	}
+	p := t.compactRanks[i*6 : i*6+6]
+	return rankEntry{
+		right: uint32(p[0]) | uint32(p[1])<<8 | uint32(p[2])<<16,
+		rank:  uint32(p[3]) | uint32(p[4])<<8 | uint32(p[5])<<16,
+	}
+}
+
 func (t *Tokenizer) mergeRank(left, right uint32) (uint32, bool) {
 	start, end := int(t.rankOffsets[left]), int(t.rankOffsets[int(left)+1])
-	i := sort.Search(end-start, func(i int) bool { return t.ranks[start+i].right >= right })
-	if i == end-start || t.ranks[start+i].right != right {
+	i := sort.Search(end-start, func(i int) bool { return t.rankAt(start+i).right >= right })
+	if i == end-start {
 		return 0, false
 	}
-	return t.ranks[start+i].rank, true
+	entry := t.rankAt(start + i)
+	if entry.right != right {
+		return 0, false
+	}
+	return entry.rank, true
 }
 
 func init() {
@@ -258,21 +274,31 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		}
 	}
 	t.rankOffsets = make([]uint32, len(tokens)+1)
-	t.ranks = make([]rankEntry, 0, unique)
-	group := 0
+	if len(tokens) <= 1<<24 && len(merges) <= 1<<24 {
+		t.compactRanks = make([]byte, 0, unique*6)
+	} else {
+		t.ranks = make([]rankEntry, 0, unique)
+	}
+	group, count := 0, 0
 	for i, entry := range entries {
 		if i > 0 && entry.left == entries[i-1].left && entry.right == entries[i-1].right {
 			continue
 		}
 		for group < int(entry.left) {
 			group++
-			t.rankOffsets[group] = uint32(len(t.ranks))
+			t.rankOffsets[group] = uint32(count)
 		}
-		t.ranks = append(t.ranks, rankEntry{entry.right, entry.rank})
+		if t.ranks != nil {
+			t.ranks = append(t.ranks, rankEntry{entry.right, entry.rank})
+		} else {
+			t.compactRanks = append(t.compactRanks, byte(entry.right), byte(entry.right>>8), byte(entry.right>>16),
+				byte(entry.rank), byte(entry.rank>>8), byte(entry.rank>>16))
+		}
+		count++
 	}
 	for group < len(tokens) {
 		group++
-		t.rankOffsets[group] = uint32(len(t.ranks))
+		t.rankOffsets[group] = uint32(count)
 	}
 	return t, nil
 }
