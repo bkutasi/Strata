@@ -22,6 +22,7 @@ type generationResult struct {
 	count   int
 	stopped bool
 	cached  int
+	timings map[string]any
 }
 
 // DONE extras contain drafts accepted/offered, reused tokens, and optionally
@@ -92,6 +93,10 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 		return out, err
 	}
 	out.cached, err = cachedPromptTokens(result, len(ids), stoppedToken)
+	if err != nil {
+		return out, err
+	}
+	out.timings, err = requestTimings(result, len(ids), out.count, out.cached)
 	if err != nil {
 		return out, err
 	}

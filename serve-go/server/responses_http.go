@@ -161,6 +161,13 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		for _, event := range events {
 			if response, ok := event["response"]; ok && (event["type"] == "response.completed" || event["type"] == "response.incomplete") {
 				final = response
+				if timings, ok := event["timings"]; ok && !o.stream {
+					response, ok := response.(map[string]any)
+					if !ok {
+						return errors.New("invalid final response")
+					}
+					response["timings"] = timings
+				}
 			}
 			if !o.stream {
 				continue
@@ -244,7 +251,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if result.stopped || finish == "cancel" {
 		finish = "stop"
 	}
-	events, err = a.Finish(responses.Done{Finish: finish, CompletionTokens: int64(result.count), Reused: int64(result.cached)})
+	events, err = a.Finish(responses.Done{Finish: finish, CompletionTokens: int64(result.count), Reused: int64(result.cached), Timings: result.timings})
 	if err == nil {
 		err = send(events)
 	}

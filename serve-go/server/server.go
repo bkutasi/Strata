@@ -409,6 +409,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	var calls []map[string]any
 	matcher := streamtext.NewStopMatcher(opt.stops)
 	started := false
+	var timings map[string]any
 	send := func(delta map[string]any, finish any, usage any) error {
 		if !opt.stream {
 			return nil
@@ -421,6 +422,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		msg := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": s.cfg.Model, "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
 		if usage != nil {
 			msg["usage"] = usage
+			msg["timings"] = timings
 		}
 		b, e := json.Marshal(msg)
 		if e != nil {
@@ -487,6 +489,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		pumped, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
 	}
 	result, count := pumped.result, pumped.count
+	timings = pumped.timings
 	finish := result.Finish
 	if pumped.stopped {
 		finish = "stop"
@@ -536,5 +539,5 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		msg["tool_calls"] = calls
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": s.cfg.Model, "choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}}, "usage": usage})
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": s.cfg.Model, "choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}}, "usage": usage, "timings": timings})
 }
