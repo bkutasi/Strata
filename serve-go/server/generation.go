@@ -18,6 +18,18 @@ type generationParser interface {
 	Finish(string) ([]outputparser.Event, error)
 }
 
+func rejectedToolCalls(parser generationParser) []map[string]string {
+	status, ok := parser.(interface{ Status() outputparser.Status })
+	if !ok {
+		return nil
+	}
+	var rejected []map[string]string
+	for _, name := range status.Status().UnreadNames {
+		rejected = append(rejected, map[string]string{"name": name, "reason": "undeclared"})
+	}
+	return rejected
+}
+
 type generationResult struct {
 	result    engine.Result
 	count     int

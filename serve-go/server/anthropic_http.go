@@ -212,6 +212,13 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 	adapter.cacheRead = result.cached
 	events, err := adapter.Finish(finish, stop, result.count)
 	if err == nil {
+		if rejected := rejectedToolCalls(parser); len(rejected) > 0 {
+			for _, event := range events {
+				if event.name == "message_delta" {
+					event.payload["strata_rejected_tool_calls"] = rejected
+				}
+			}
+		}
 		err = send(events)
 	}
 	if err != nil {

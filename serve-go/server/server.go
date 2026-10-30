@@ -557,6 +557,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	started := false
 	structuredReady := false
 	var timings map[string]any
+	var rejected []map[string]string
 	send := func(delta map[string]any, finish any, usage any, logprobs map[string]any) error {
 		if !opt.stream || (opt.structured && !structuredReady) {
 			return nil
@@ -574,6 +575,9 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		if usage != nil {
 			msg["usage"] = usage
 			msg["timings"] = timings
+			if len(rejected) > 0 {
+				msg["strata_rejected_tool_calls"] = rejected
+			}
 		}
 		b, e := json.Marshal(msg)
 		if e != nil {
@@ -741,6 +745,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	usage := map[string]any{"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count,
 		"prompt_tokens_details": map[string]int{"cached_tokens": pumped.cached}}
+	rejected = rejectedToolCalls(parser)
 	if opt.stream {
 		if send(map[string]any{}, finish, usage, nil) == nil {
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
@@ -770,7 +775,11 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		}
 		choice["logprobs"] = lp
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": responseModel, "choices": []any{choice}, "usage": usage, "timings": timings})
+	response := map[string]any{"id": id, "object": "chat.completion", "created": created, "model": responseModel, "choices": []any{choice}, "usage": usage, "timings": timings}
+	if len(rejected) > 0 {
+		response["strata_rejected_tool_calls"] = rejected
+	}
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func normalizeAliases(model string, aliases []string) []string {
