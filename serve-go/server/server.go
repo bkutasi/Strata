@@ -37,6 +37,7 @@ type Config struct {
 	MaxConcurrent          int
 	DefaultReasoningBudget *int
 	DisableAnswerRoom      bool
+	RepeatStopTokens       *int
 }
 
 // Engine is the native generation service used by the handler.
@@ -50,18 +51,23 @@ type server struct {
 	cfg        Config
 	normalizer *requestnorm.Normalizer
 	stopIDs    map[int]bool
+	repeatStop int
 }
 
 func New(c Config) (http.Handler, error) {
 	if c.Model == "" || (c.Family != requestnorm.FamilyQwen && c.Family != requestnorm.FamilyDeepSeek) || c.Tokenizer == nil || c.Engine == nil || c.Renderer == nil ||
-		c.MaxBody <= 0 || c.MaxPromptBytes <= 0 || c.MaxOutputTokens <= 0 || c.MaxConcurrent <= 0 {
+		c.MaxBody <= 0 || c.MaxPromptBytes <= 0 || c.MaxOutputTokens <= 0 || c.MaxConcurrent <= 0 ||
+		(c.RepeatStopTokens != nil && *c.RepeatStopTokens < 0) {
 		return nil, errors.New("invalid server configuration")
 	}
 	n, err := requestnorm.NewNormalizer(c.Family)
 	if err != nil {
 		return nil, err
 	}
-	s := &server{cfg: c, normalizer: n, stopIDs: map[int]bool{}}
+	s := &server{cfg: c, normalizer: n, stopIDs: map[int]bool{}, repeatStop: 256}
+	if c.RepeatStopTokens != nil {
+		s.repeatStop = *c.RepeatStopTokens
+	}
 	stopTags := []string{"<|im_end|>", "<|endoftext|>"}
 	if c.Family == requestnorm.FamilyDeepSeek {
 		stopTags = []string{"<｜end▁of▁sentence｜>"}
@@ -519,7 +525,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		pumped, err = generateWithForce(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route)
+		pumped, err = generateWithForce(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, s.repeatStop)
 	}
 	result, count := pumped.result, pumped.count
 	timings = pumped.timings

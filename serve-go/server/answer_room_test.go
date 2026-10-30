@@ -88,7 +88,7 @@ func TestAutomaticReasoningBudgetHTTP(t *testing.T) {
 	tok, _ := syntheticTokenizer(t)
 	thought := make([]int, 600)
 	for i := range thought {
-		thought[i] = 'a'
+		thought[i] = 'a' + i%2
 	}
 	for _, api := range []struct{ path, body string }{
 		{"/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":1024}`},

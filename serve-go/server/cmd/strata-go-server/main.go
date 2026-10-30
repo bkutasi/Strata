@@ -53,6 +53,7 @@ func run() error {
 	var engineLog io.Writer = os.Stderr
 	var configuredKey string
 	var defaultReasoningBudget *int
+	var repeatStopTokens *int
 	var disableAnswerRoom bool
 	if *configPath != "" {
 		cfg, err := readStandaloneConfig(*configPath)
@@ -60,6 +61,10 @@ func run() error {
 			return err
 		}
 		defaultReasoningBudget, disableAnswerRoom, err = cfg.thinkingConfig()
+		if err != nil {
+			return err
+		}
+		repeatStopTokens, err = cfg.repeatStopConfig()
 		if err != nil {
 			return err
 		}
@@ -187,7 +192,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom})
+	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, RepeatStopTokens: repeatStopTokens})
 	if err != nil {
 		return err
 	}

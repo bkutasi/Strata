@@ -82,3 +82,29 @@ func TestStandaloneThinkingConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestStandaloneRepeatStopConfig(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		ok    bool
+	}{
+		{``, true},
+		{`,"repeat_stop_tokens":0`, true},
+		{`,"repeat_stop_tokens":256`, true},
+		{`,"repeat_stop_tokens":-1`, false},
+		{`,"repeat_stop_tokens":true`, false},
+		{`,"repeat_stop_tokens":null`, false},
+		{`,"repeat_stop_tokens":1.0`, false},
+		{`,"repeat_stop_tokens":"3"`, false},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		data := `{"exe":"e","tokenizer":"t","model_name":"m"` + tc.field + `}`
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := readStandaloneConfig(path)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: error %v, want ok=%v", tc.field, err, tc.ok)
+		}
+	}
+}

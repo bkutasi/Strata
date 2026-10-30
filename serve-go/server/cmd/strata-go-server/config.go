@@ -30,6 +30,32 @@ type standaloneConfig struct {
 	Log             string            `json:"log"`
 	AnswerRoom      json.RawMessage   `json:"answer_room"`
 	ReasoningBudget json.RawMessage   `json:"reasoning_budget_tokens"`
+	RepeatStop      json.RawMessage   `json:"repeat_stop_tokens,omitempty"`
+}
+
+func (c standaloneConfig) repeatStopConfig() (*int, error) {
+	if len(c.RepeatStop) == 0 {
+		return nil, nil
+	}
+	value, err := requestnorm.ParseValue(c.RepeatStop)
+	if err != nil {
+		return nil, err
+	}
+	text, ok := value.Integer()
+	if !ok {
+		return nil, errors.New("repeat_stop_tokens must be a whole number >= 0")
+	}
+	n, err := strconv.Atoi(text)
+	if err != nil {
+		if strings.HasPrefix(text, "-") {
+			return nil, errors.New("repeat_stop_tokens must be a whole number >= 0")
+		}
+		n = math.MaxInt
+	}
+	if n < 0 {
+		return nil, errors.New("repeat_stop_tokens must be a whole number >= 0")
+	}
+	return &n, nil
 }
 
 func (c standaloneConfig) thinkingConfig() (*int, bool, error) {
@@ -83,6 +109,9 @@ func readStandaloneConfig(path string) (standaloneConfig, error) {
 		return cfg, errors.New("config requires exe, tokenizer and model_name")
 	}
 	if _, _, err := cfg.thinkingConfig(); err != nil {
+		return cfg, fmt.Errorf("invalid config: %w", err)
+	}
+	if _, err := cfg.repeatStopConfig(); err != nil {
 		return cfg, fmt.Errorf("invalid config: %w", err)
 	}
 	if !filepath.IsAbs(cfg.Exe) {

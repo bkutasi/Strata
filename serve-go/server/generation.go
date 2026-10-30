@@ -57,14 +57,19 @@ const reasoningWrapUp = "\n\nI have thought about this long enough; time to give
 
 // generate pumps tokens through the parser and resumes after a thinking budget.
 // The callback may return stopGeneration to drain inference.
-func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, callback func([]outputparser.Event) error) (generationResult, error) {
-	return generateWithForce(ctx, e, tokenizer, parser, ids, max, sampling, stopIDs, budget, "", callback)
+func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, callback func([]outputparser.Event) error, repeatLimit ...int) (generationResult, error) {
+	return generateWithForce(ctx, e, tokenizer, parser, ids, max, sampling, stopIDs, budget, "", callback, repeatLimit...)
 }
 
-func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error) (generationResult, error) {
+func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error, repeatLimit ...int) (generationResult, error) {
 	var out generationResult
 	decoder := streamtext.Decoder{}
 	stoppedToken := false
+	repeated, runID, runLength := false, 0, 0
+	limit := 256
+	if len(repeatLimit) > 0 {
+		limit = repeatLimit[0]
+	}
 	status, hasStatus := parser.(interface{ Status() outputparser.Status })
 	if budget > 0 || force != "" {
 		if !hasStatus {
@@ -107,6 +112,17 @@ func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.
 				state := status.Status().State
 				if state == "reasoning" || state == "rcall" {
 					out.reasoning++
+				}
+			}
+			if limit > 0 {
+				if runLength > 0 && id == runID {
+					runLength++
+				} else {
+					runID, runLength = id, 1
+				}
+				if runLength >= limit {
+					repeated = true
+					return engine.ErrStopGeneration
 				}
 			}
 			if budget > 0 || force != "" {
@@ -167,7 +183,7 @@ func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.
 		}
 		if first {
 			out.result = result
-			out.cached, err = cachedPromptTokens(result, len(ids), stoppedToken || wrap || opens)
+			out.cached, err = cachedPromptTokens(result, len(ids), stoppedToken || repeated || wrap || opens)
 			if err != nil {
 				return out, err
 			}
@@ -226,6 +242,9 @@ func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.
 		continued = append(continued, segment...)
 		prompt = append(continued, extra...)
 		budget = 0
+	}
+	if repeated {
+		out.result.Finish = "length"
 	}
 	out.stopped = stoppedToken
 	var err error

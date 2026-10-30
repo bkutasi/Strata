@@ -3,11 +3,50 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"strata/engine"
 	"strata/outputparser"
 )
+
+func TestGenerateRepeatStop(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	defaultRun := make([]int, 256)
+	for i := range defaultRun {
+		defaultRun[i] = 'x'
+	}
+	for _, tc := range []struct {
+		name   string
+		tokens []int
+		limit  []int
+		text   string
+		count  int
+		finish string
+	}{
+		{"default", defaultRun, nil, strings.Repeat("x", 255), 256, "length"},
+		{"threshold", []int{'a', 'a', 'a', 'b'}, []int{3}, "aa", 3, "length"},
+		{"reset", []int{'a', 'a', 'b', 'a', 'a', 'b'}, []int{3}, "aabaab", 6, "stop"},
+		{"disabled", []int{'a', 'a', 'a', 'b'}, []int{0}, "aaab", 4, "stop"},
+		{"single", []int{'a', 'b'}, []int{1}, "", 1, "length"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parser := &pumpParser{}
+			var got string
+			out, err := generate(context.Background(), pumpEngine{tokens: tc.tokens}, tok, parser, []int{1},
+				300, engine.Sampling{}, nil, 0, func(events []outputparser.Event) error {
+					for _, event := range events {
+						got += event.Text
+					}
+					return nil
+				}, tc.limit...)
+			if err != nil || got != tc.text || out.count != tc.count || out.stopped ||
+				out.result.Finish != tc.finish || parser.finish != tc.finish {
+				t.Fatalf("out=%+v text=%q parser finish=%q err=%v", out, got, parser.finish, err)
+			}
+		})
+	}
+}
 
 type pumpEngine struct {
 	tokens []int

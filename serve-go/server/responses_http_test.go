@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -93,6 +94,41 @@ func TestResponsesTextAndReasoning(t *testing.T) {
 		response.Usage.Input != 2 || response.Usage.Output != len("thinking</think>answer") ||
 		response.Usage.Details.Reasoning != len("thinking</think>") {
 		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+func TestRepeatStopAcrossAPIs(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	for _, tc := range []struct {
+		limit      int
+		wantText   string
+		wantFinish string
+		wantTokens int
+	}{
+		{3, "aa", "length", 3},
+		{0, "aaaab", "stop", 5},
+	} {
+		h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+			Engine: responsesEngine{text: "aaaab", finish: "stop"}, Renderer: contextRenderer{},
+			APIKeys: []string{"secret"}, MaxBody: 8192, MaxPromptBytes: 2048,
+			MaxOutputTokens: 512, MaxConcurrent: 1, RepeatStopTokens: &tc.limit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, api := range []struct {
+			path, body, text, finish, tokens string
+		}{
+			{"/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}]}`, `"content":"` + tc.wantText + `"`, `"finish_reason":"` + tc.wantFinish + `"`, `"completion_tokens":`},
+			{"/v1/messages", `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":32}`, `"text":"` + tc.wantText + `"`, `"stop_reason":"` + map[string]string{"length": "max_tokens", "stop": "end_turn"}[tc.wantFinish] + `"`, `"output_tokens":`},
+			{"/v1/responses", `{"input":"hi"}`, `"text":"` + tc.wantText + `"`, `"status":"` + map[string]string{"length": "incomplete", "stop": "completed"}[tc.wantFinish] + `"`, `"output_tokens":`},
+		} {
+			w := responsesRequest(h, api.path, api.body, "secret")
+			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), api.text) ||
+				!strings.Contains(w.Body.String(), api.finish) ||
+				!strings.Contains(w.Body.String(), api.tokens+strconv.Itoa(tc.wantTokens)) {
+				t.Errorf("limit %d %s: status %d: %s", tc.limit, api.path, w.Code, w.Body.String())
+			}
+		}
 	}
 }
 
