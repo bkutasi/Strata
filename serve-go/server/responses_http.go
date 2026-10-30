@@ -79,6 +79,9 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		switch f.Name {
 		case "stream":
 			o.stream, _ = v.Bool()
+		case "strata_checkpoint":
+			value, ok := v.Bool()
+			o.sampling.DisableCheckpoint = ok && !value
 		case "logit_bias":
 			o.sampling.LogitBias, err = s.requestLogitBias(v)
 		case "max_output_tokens":

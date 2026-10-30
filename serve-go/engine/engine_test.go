@@ -490,6 +490,10 @@ func TestSamplingDefaultsAndValidation(t *testing.T) {
 	if err != nil || keys != " top_k=64 penalty_freq=1 penalty_last_n=12" {
 		t.Fatalf("mapping: %q %v", keys, err)
 	}
+	keys, err = samplingKeys(Sampling{DisableCheckpoint: true})
+	if err != nil || keys != " ckpt=0" {
+		t.Fatalf("checkpoint: %q %v", keys, err)
+	}
 	for _, s := range []Sampling{{Temperature: f(math.NaN())}, {TopP: f(0)}, {MinP: f(1.1)}, {TopK: i(-1)}, {PenaltyLastN: i(-1)}, {RepetitionPenalty: f(0)}, {FrequencyPenalty: f(math.Inf(1))}} {
 		if _, err := samplingKeys(s); err == nil {
 			t.Fatalf("accepted invalid sampling: %#v", s)

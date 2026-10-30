@@ -72,6 +72,9 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 				return requestnorm.AnthropicResult{}, o, errors.New("stream must be a boolean")
 			}
 		case "stop", "stop_sequences":
+		case "strata_checkpoint":
+			value, ok := v.Bool()
+			o.sampling.DisableCheckpoint = ok && !value
 		case "logit_bias":
 			o.sampling.LogitBias, err = s.requestLogitBias(v)
 			if err != nil {

@@ -312,6 +312,7 @@ type Sampling struct {
 	RepetitionPenalty, FrequencyPenalty, PresencePenalty *float64
 	Seed                                                 *uint64
 	LogitBias                                            map[int]float64
+	DisableCheckpoint                                    bool
 }
 
 // RequestOptions configures a text request. OnToken runs synchronously in
@@ -385,6 +386,9 @@ func samplingKeys(s Sampling) (string, error) {
 	}
 	if s.Seed != nil && *s.Seed > 0 {
 		fmt.Fprintf(&keys, " seed=%d", *s.Seed)
+	}
+	if s.DisableCheckpoint {
+		keys.WriteString(" ckpt=0")
 	}
 	if len(s.LogitBias) > 0 {
 		ids := make([]int, 0, len(s.LogitBias))

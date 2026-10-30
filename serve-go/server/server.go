@@ -310,6 +310,9 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "max_tokens", "max_completion_tokens":
 		case "reasoning_budget_tokens", "thinking_budget_tokens":
 		case "stop", "stop_sequences":
+		case "strata_checkpoint":
+			value, ok := v.Bool()
+			o.sampling.DisableCheckpoint = ok && !value
 		case "logprobs":
 			enabled, isBool := v.Bool()
 			integer, isInt := v.Integer()

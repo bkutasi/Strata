@@ -45,6 +45,8 @@ Chat, Responses and Anthropic requests also accept `logit_bias` as an object
 or a list of token-ID and bias pairs. It requires a native engine that
 advertises bias support and is not using continuous batching; unsupported
 engines reject the request.
+For one-shot requests, `"strata_checkpoint": false` skips creating a
+conversation checkpoint, as in Python; cached prefixes can still be reused.
 Chat accepts inactive `logprobs` options, but requests for token log
 probabilities are rejected; generated-token logprobs are not implemented.
 When Chat supplies both output-token limits, `max_completion_tokens` takes
