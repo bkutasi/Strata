@@ -253,8 +253,8 @@ func TestHTTPIntegration(t *testing.T) {
 		t.Fatalf("control literal status %d", status)
 	}
 	status, _ = request(t, ts.Client(), ts.URL+"/v1/messages", `{}`, "secret")
-	if status != 501 {
-		t.Fatalf("unsupported endpoint status %d", status)
+	if status != 400 {
+		t.Fatalf("empty messages status %d", status)
 	}
 	status, bodyOut = request(t, ts.Client(), url, `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,"stop":"STOP","chat_template_kwargs":{"enable_thinking":false}}`, "secret")
 	if status != 200 || !strings.Contains(bodyOut, `"content":"hello "`) {

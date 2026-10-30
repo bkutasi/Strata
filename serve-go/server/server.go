@@ -124,7 +124,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	countTokens := r.URL.Path == "/v1/messages/count_tokens" || r.URL.Path == "/v1/v1/messages/count_tokens"
-	if r.URL.Path != "/v1/chat/completions" && !countTokens {
+	messages := r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/v1/messages"
+	if r.URL.Path != "/v1/chat/completions" && !countTokens && !messages {
 		fail(w, http.StatusNotImplemented, "unsupported_endpoint", "endpoint is not implemented")
 		return
 	}
@@ -135,6 +136,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	if countTokens {
 		s.countTokens(w, r)
+	} else if messages {
+		s.anthropic(w, r)
 	} else {
 		s.chat(w, r)
 	}
@@ -333,10 +336,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		tools = append(tools, m)
 	}
 	parserOptions := outputparser.Options{Thinking: rendered.Thinking, Tools: tools, DeclaredOnly: true}
-	var parser interface {
-		Feed(string) ([]outputparser.Event, error)
-		Finish(string) ([]outputparser.Event, error)
-	}
+	var parser generationParser
 	if s.cfg.Family == requestnorm.FamilyDeepSeek {
 		parser, err = outputparser.NewDeepSeek(parserOptions)
 	} else {
@@ -355,7 +355,6 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	var content, reason strings.Builder
 	var calls []map[string]any
 	matcher := streamtext.NewStopMatcher(opt.stops)
-	var decoder streamtext.Decoder
 	started := false
 	send := func(delta map[string]any, finish any, usage any) error {
 		if !opt.stream {
@@ -429,57 +428,14 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	count := 0
-	stoppedToken := false
-	result, err := s.cfg.Engine.GenerateWithOptions(r.Context(), ids, opt.max, engine.RequestOptions{Sampling: opt.sampling, OnToken: func(id int) error {
-		count++
-		if count > opt.max {
-			return errors.New("engine exceeded output token limit")
-		}
-		if stoppedToken {
-			return nil
-		}
-		if s.stopIDs[id] {
-			stoppedToken = true
-			return nil
-		}
-		raw, e := s.cfg.Tokenizer.TokenBytes(id)
-		if e != nil {
-			return e
-		}
-		events, e := parser.Feed(decoder.Push(raw))
-		if e != nil {
-			return e
-		}
-		e = route(events)
-		if errors.Is(e, stopGeneration) {
-			// shortcut: drain to DONE instead of stopping inference, until reusable STOP is supported.
-			stoppedToken = true
-			return nil
-		}
-		return e
-	}})
+	pumped, err := generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+	result, count := pumped.result, pumped.count
 	finish := result.Finish
-	if stoppedToken {
+	if pumped.stopped {
 		finish = "stop"
-	}
-	if errors.Is(err, stopGeneration) {
-		finish = "stop"
-		err = nil
 	}
 	if err == nil {
-		var events []outputparser.Event
-		events, err = parser.Finish(finish)
-		if err == nil {
-			err = route(events)
-			if errors.Is(err, stopGeneration) {
-				err = nil
-				finish = "stop"
-			}
-		}
-		if err == nil {
-			err = emitContent(matcher.Finish())
-		}
+		err = emitContent(matcher.Finish())
 	}
 	if err != nil {
 		if r.Context().Err() != nil {
