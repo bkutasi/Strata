@@ -11,8 +11,10 @@ prompts at `POST /v1/messages/count_tokens` without running generation.
 As in Python, requests naming another model use the loaded model and report
 its name; model aliases are not supported.
 It also accepts stateless text-only requests at `POST /v1/responses`, with
-named streaming events, reasoning, stop strings and completed function calls. Stored responses,
-images and custom tools are not supported.
+named streaming events, reasoning, stop strings, and completed function and
+custom tool calls. Hosted and unknown tools are left out and a warning is
+logged; the server does not run them. Stored responses and images are not
+supported.
 As in the Python server, `store: true` is accepted but responses are not stored.
 Codex client metadata is accepted; the optional Codex thread-title and
 compaction-cache behaviors are not implemented.
@@ -22,13 +24,15 @@ The APIs support `auto` and `none` tool choices. Chat and Anthropic requests
 also support forced or named choices with or without thinking. A positive request reasoning budget closes
 thinking and continues the answer; zero or negative disables the explicit
 limit. As in Python, automatic answer-room limits can still apply. The run
-config supports `reasoning_budget_tokens` and `answer_room: false`.
+config supports `reasoning_budget_tokens` and `answer_room: false`. A reply
+that repeats one token 256 times is stopped as length; set
+`repeat_stop_tokens` to 0 to turn this off.
 As in the
 Python Responses route, Responses `tool_choice: none` removes tools; other
 choices are accepted but do not force a tool. Incomplete tool calls are not
 streamed. All APIs reject images and use the renderer limits below. Other
 endpoints and model families are not implemented.
-Chat sampling supports temperature, top-p, top-k, min-p, repetition,
+Chat, Responses and Anthropic sampling supports temperature, top-p, top-k, min-p, repetition,
 frequency and presence penalties, penalty window, and seed.
 When Chat supplies both output-token limits, `max_completion_tokens` takes
 precedence unless it is zero or null, as in the Python server.
@@ -67,8 +71,8 @@ The server also accepts a limited standalone Python JSON run config:
 For compatibility with the Python command, `--engine strata` can also be
 given with `--config`; the executable still comes from the config.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
-integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens` and
-`answer_room`. Other config fields are rejected
+integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens`,
+`answer_room` and `repeat_stop_tokens`. Other config fields are rejected
 rather than silently ignored. `--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.

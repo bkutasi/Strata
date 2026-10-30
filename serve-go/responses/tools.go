@@ -2,6 +2,7 @@ package responses
 
 import (
 	"fmt"
+	"log"
 
 	"strata/requestnorm"
 )
@@ -20,6 +21,7 @@ func requestTools(req requestnorm.Value) ([]requestnorm.Value, map[string]ToolNa
 		}
 	}
 	var tools []requestnorm.Value
+	skipped := false
 	names := map[string]ToolName{}
 	add := func(tool requestnorm.Value, path, namespace, nsDescription string) error {
 		if err := known(tool, path, "type", "name", "description", "parameters", "strict", "format"); err != nil {
@@ -140,10 +142,11 @@ func requestTools(req requestnorm.Value) ([]requestnorm.Value, map[string]ToolNa
 				}
 			}
 		default:
-			// Python skips hosted and unknown tools. Refusing them avoids silently
-			// changing the tools a client believes it offered.
-			return nil, nil, unsupported(p+".type", "hosted or unknown tools are not supported")
+			skipped = true
 		}
+	}
+	if skipped {
+		log.Print("[strata] /v1/responses: hosted or unknown tools were left out; this server cannot run them")
 	}
 	if s, _ := stringOf(field(req, "tool_choice")); s == "none" {
 		return nil, names, nil

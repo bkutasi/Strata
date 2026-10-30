@@ -235,6 +235,39 @@ func TestResponsesCustomToolCalls(t *testing.T) {
 	}
 }
 
+func TestResponsesHostedToolsAreLeftOut(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	for _, tc := range []struct {
+		tools      string
+		text       string
+		wantTools  int
+		outputType string
+	}{
+		{`[{"type":"web_search"},{"type":"future_tool"}]`, "</think>hello", 0, "message"},
+		{`[{"type":"web_search"},{"type":"function","name":"lookup","parameters":{"type":"object"}}]`,
+			"</think><tool_call><function=lookup></function></tool_call>", 1, "function_call"},
+	} {
+		for _, stream := range []string{"false", "true"} {
+			renderer := &toolChoiceRenderer{}
+			h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+				Engine: responsesEngine{text: tc.text, finish: "stop"}, Renderer: renderer, APIKeys: []string{"secret"},
+				MaxBody: 8192, MaxPromptBytes: 2048, MaxOutputTokens: 512, MaxConcurrent: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := `{"input":"hi","tools":` + tc.tools + `,"stream":` + stream + `}`
+			w := responsesRequest(h, "/v1/responses", body, "secret")
+			renderer.mu.Lock()
+			gotTools := renderer.tools
+			renderer.mu.Unlock()
+			if w.Code != http.StatusOK || gotTools != tc.wantTools ||
+				!strings.Contains(w.Body.String(), `"type":"`+tc.outputType+`"`) {
+				t.Errorf("tools=%s stream=%s: status %d, offered %d: %s", tc.tools, stream, w.Code, gotTools, w.Body.String())
+			}
+		}
+	}
+}
+
 func TestResponsesNumericStringSamplingValidation(t *testing.T) {
 	h := responsesHandler(t, "answer", "stop", false)
 	for _, tc := range []struct {
