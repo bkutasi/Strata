@@ -47,8 +47,8 @@ advertises bias support and is not using continuous batching; unsupported
 engines reject the request.
 For one-shot requests, `"strata_checkpoint": false` skips creating a
 conversation checkpoint, as in Python; cached prefixes can still be reused.
-Chat accepts inactive `logprobs` options, but requests for token log
-probabilities are rejected; generated-token logprobs are not implemented.
+Chat accepts `logprobs`, `top_logprobs` and `allowed_token_ids`. An older
+engine that does not send probabilities returns the answer without them.
 When Chat supplies both output-token limits, `max_completion_tokens` takes
 precedence unless it is zero or null, as in the Python server.
 Chat, Responses and Anthropic accept `stop` or `stop_sequences`; a non-null

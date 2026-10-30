@@ -230,6 +230,12 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	if err != nil {
 		return requestnorm.Result{}, o, err
 	}
+	if _, present := root.Lookup("logprobs"); present {
+		o.sampling.Logprobs, o.sampling.AllowedTokenIDs, err = chatLogprobs(root, s.cfg.Tokenizer.VocabularySize())
+		if err != nil {
+			return requestnorm.Result{}, o, err
+		}
+	}
 	var toolChoice requestnorm.Value
 	maxValue, _ := root.Lookup("max_completion_tokens")
 	fallback := maxValue.Kind() == requestnorm.Null
@@ -313,14 +319,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "strata_checkpoint":
 			value, ok := v.Bool()
 			o.sampling.DisableCheckpoint = ok && !value
-		case "logprobs":
-			enabled, isBool := v.Bool()
-			integer, isInt := v.Integer()
-			if (isBool && enabled) || (isInt && !strings.HasPrefix(integer, "-")) {
-				return requestnorm.Result{}, o, errors.New("logprobs are not supported")
-			}
-		case "top_logprobs", "allowed_token_ids":
-			// Python ignores these unless logprobs are requested.
+		case "logprobs", "top_logprobs", "allowed_token_ids":
 		case "logit_bias":
 			o.sampling.LogitBias, err = s.requestLogitBias(v)
 			if err != nil {
@@ -531,11 +530,27 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	id, created := "chatcmpl-"+hex.EncodeToString(random[:]), time.Now().Unix()
 	var content, reason strings.Builder
 	var calls []map[string]any
+	var collector *logprobCollector
+	var contentLogprobs, reasonLogprobs []logprobEntry
+	var onLogprob func(int, *engine.Logprob) error
+	if opt.sampling.Logprobs != nil {
+		collector = newLogprobCollector(s.cfg.Tokenizer, s.stopIDs, opt.sampling.AllowedTokenIDs)
+		onLogprob = func(id int, lp *engine.Logprob) error {
+			if lp == nil {
+				return nil
+			}
+			in := logprobInput{ID: id, Logprob: lp.Value}
+			for _, alt := range lp.Alternatives {
+				in.Alternatives = append(in.Alternatives, logprobAlternative{ID: alt.TokenID, Logprob: alt.Value})
+			}
+			return collector.Add(in)
+		}
+	}
 	matcher := streamtext.NewStopMatcher(opt.stops)
 	started := false
 	structuredReady := false
 	var timings map[string]any
-	send := func(delta map[string]any, finish any, usage any) error {
+	send := func(delta map[string]any, finish any, usage any, logprobs map[string]any) error {
 		if !opt.stream || (opt.structured && !structuredReady) {
 			return nil
 		}
@@ -544,7 +559,11 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
 			started = true
 		}
-		msg := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": responseModel, "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+		choice := map[string]any{"index": 0, "delta": delta, "finish_reason": finish}
+		if len(logprobs) > 0 {
+			choice["logprobs"] = logprobs
+		}
+		msg := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": responseModel, "choices": []any{choice}}
 		if usage != nil {
 			msg["usage"] = usage
 			msg["timings"] = timings
@@ -563,7 +582,17 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 		content.WriteString(text)
-		return send(map[string]any{"content": text}, nil, nil)
+		var lp map[string]any
+		if collector != nil {
+			entries := collector.Spell(text)
+			if len(entries) > 0 {
+				if !opt.stream || opt.structured {
+					contentLogprobs = append(contentLogprobs, entries...)
+				}
+				lp = map[string]any{"content": entries}
+			}
+		}
+		return send(map[string]any{"content": text}, nil, nil, lp)
 	}
 	route := func(events []outputparser.Event) error {
 		for _, ev := range events {
@@ -583,7 +612,17 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			case "reasoning":
 				reason.WriteString(ev.Text)
 				if ev.Text != "" {
-					if e := send(map[string]any{"reasoning_content": ev.Text}, nil, nil); e != nil {
+					var lp map[string]any
+					if collector != nil {
+						entries := collector.Spell(ev.Text)
+						if len(entries) > 0 {
+							if !opt.stream || opt.structured {
+								reasonLogprobs = append(reasonLogprobs, entries...)
+							}
+							lp = map[string]any{"reasoning_content": entries}
+						}
+					}
+					if e := send(map[string]any{"reasoning_content": ev.Text}, nil, nil, lp); e != nil {
 						return e
 					}
 				}
@@ -596,7 +635,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 				index := len(calls)
 				calls = append(calls, call)
 				delta := map[string]any{"index": index, "id": ev.Call.ID, "type": "function", "function": call["function"]}
-				if e = send(map[string]any{"tool_calls": []any{delta}}, nil, nil); e != nil {
+				if e = send(map[string]any{"tool_calls": []any{delta}}, nil, nil, nil); e != nil {
 					return e
 				}
 			}
@@ -604,7 +643,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 	if opt.stream {
-		if err = send(map[string]any{"role": "assistant", "content": ""}, nil, nil); err != nil {
+		if err = send(map[string]any{"role": "assistant", "content": ""}, nil, nil, nil); err != nil {
 			return
 		}
 	}
@@ -615,7 +654,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, s.repeatStop)
+		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, onLogprob, s.repeatStop)
 	}
 	result, count := pumped.result, pumped.count
 	timings = pumped.timings
@@ -663,18 +702,29 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		validated, contentLogprobs = structuredLogprobs(content.String(), validated, contentLogprobs)
+		if len(contentLogprobs) == 0 {
+			reasonLogprobs = nil
+		}
 		content.Reset()
 		content.WriteString(validated)
 		structuredReady = true
 		if opt.stream {
-			if err = send(map[string]any{"role": "assistant", "content": ""}, nil, nil); err != nil {
+			if err = send(map[string]any{"role": "assistant", "content": ""}, nil, nil, nil); err != nil {
 				return
 			}
 			delta := map[string]any{"content": validated}
 			if reason.Len() > 0 {
 				delta["reasoning_content"] = reason.String()
 			}
-			if err = send(delta, nil, nil); err != nil {
+			var lp map[string]any
+			if len(contentLogprobs) > 0 {
+				lp = map[string]any{"content": contentLogprobs}
+				if len(reasonLogprobs) > 0 {
+					lp["reasoning_content"] = reasonLogprobs
+				}
+			}
+			if err = send(delta, nil, nil, lp); err != nil {
 				return
 			}
 		}
@@ -685,7 +735,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	usage := map[string]any{"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count,
 		"prompt_tokens_details": map[string]int{"cached_tokens": pumped.cached}}
 	if opt.stream {
-		if send(map[string]any{}, finish, usage) == nil {
+		if send(map[string]any{}, finish, usage, nil) == nil {
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			_ = http.NewResponseController(w).Flush()
 		}
@@ -702,7 +752,18 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		msg["tool_calls"] = calls
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": responseModel, "choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}}, "usage": usage, "timings": timings})
+	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
+	if len(contentLogprobs) > 0 || len(reasonLogprobs) > 0 {
+		lp := map[string]any{"content": contentLogprobs, "refusal": nil}
+		if contentLogprobs == nil {
+			lp["content"] = []logprobEntry{}
+		}
+		if len(reasonLogprobs) > 0 {
+			lp["reasoning_content"] = reasonLogprobs
+		}
+		choice["logprobs"] = lp
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": responseModel, "choices": []any{choice}, "usage": usage, "timings": timings})
 }
 
 func normalizeAliases(model string, aliases []string) []string {

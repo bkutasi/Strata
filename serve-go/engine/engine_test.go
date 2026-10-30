@@ -35,6 +35,102 @@ func TestGenerationCommand(t *testing.T) {
 	}
 }
 
+func TestParseLogprob(t *testing.T) {
+	lp, err := parseLogprob(strings.Fields("LP -0.25 9:-1.5 8:-2"))
+	if err != nil || lp.Value != -.25 || len(lp.Alternatives) != 2 || lp.Alternatives[0] != (LogprobAlternative{9, -1.5}) || lp.Alternatives[1] != (LogprobAlternative{8, -2}) {
+		t.Fatalf("parsed %#v: %v", lp, err)
+	}
+	for _, input := range []string{"LP nan", "LP -nan(ind)"} {
+		if lp, err := parseLogprob(strings.Fields(input)); err != nil || lp != nil {
+			t.Fatalf("unavailable LP %q: %#v %v", input, lp, err)
+		}
+	}
+	for _, input := range []string{"LP", "LP inf", "LP -1 -1:0", "LP -1 3:no", "LP -1 3:0:1"} {
+		if _, err := parseLogprob(strings.Fields(input)); err == nil {
+			t.Fatalf("accepted %q", input)
+		}
+	}
+}
+
+func TestLogprobPipe(t *testing.T) {
+	for _, mode := range []string{"logprobs", "logprobs-geni", "logprobs-missing", "logprobs-stop", "logprobs-cancel", "logprobs-bad"} {
+		t.Run(mode, func(t *testing.T) {
+			e := startFake(t, mode, &bytes.Buffer{})
+			ctx, cancel := context.WithCancel(testContext(t))
+			defer cancel()
+			k := 2
+			var events []string
+			opts := RequestOptions{
+				Sampling: Sampling{Logprobs: &k, AllowedTokenIDs: []int{8, 9}},
+				OnLogprob: func(id int, lp *Logprob) error {
+					if lp == nil {
+						events = append(events, fmt.Sprintf("lp%d:nil", id))
+					} else {
+						events = append(events, fmt.Sprintf("lp%d:%g", id, lp.Value))
+					}
+					if mode == "logprobs-stop" {
+						return ErrStopGeneration
+					}
+					if mode == "logprobs-cancel" {
+						cancel()
+					}
+					return nil
+				},
+				OnToken: func(id int) error {
+					events = append(events, fmt.Sprintf("t%d", id))
+					return nil
+				},
+			}
+			if mode == "logprobs-geni" {
+				opts.EmbeddingsPath = "/tmp/vision.bin"
+			}
+			result, err := e.GenerateWithOptions(ctx, []int{12, 34}, 3, opts)
+			switch mode {
+			case "logprobs-cancel":
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("error=%v", err)
+				}
+			default:
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mode == "logprobs-stop" && result.Finish != "stop" {
+					t.Fatalf("finish=%q", result.Finish)
+				}
+			}
+			want := "lp42:-0.25,t42,lp43:-0.5,t43"
+			switch mode {
+			case "logprobs-missing":
+				want = "lp42:nil,t42,lp43:nil,t43"
+			case "logprobs-stop", "logprobs-cancel":
+				want = "lp42:nil"
+			case "logprobs-bad":
+				want = "lp42:nil,t42"
+			}
+			if got := strings.Join(events, ","); got != want {
+				t.Fatalf("events=%q want=%q", got, want)
+			}
+			if mode == "logprobs-stop" {
+				if _, err := e.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{Sampling: opts.Sampling}); err != nil {
+					t.Fatalf("reuse after carried DONE: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestLogprobValidation(t *testing.T) {
+	negative, tooLarge, zero := -1, 21, 0
+	for _, s := range []Sampling{
+		{Logprobs: &negative}, {Logprobs: &tooLarge},
+		{AllowedTokenIDs: []int{1}}, {Logprobs: &zero, AllowedTokenIDs: []int{-1}},
+	} {
+		if _, err := samplingKeys(s); err == nil {
+			t.Fatalf("accepted invalid sampling")
+		}
+	}
+}
+
 func BenchmarkGenerationCommand(b *testing.B) {
 	ids := make([]int, 262144)
 	for i := range ids {
@@ -137,6 +233,27 @@ func TestHelperProcess(t *testing.T) {
 		if strings.HasPrefix(line, "GEN ") || strings.HasPrefix(line, "GENI ") {
 			requests++
 			switch mode {
+			case "logprobs", "logprobs-geni", "logprobs-missing", "logprobs-stop", "logprobs-cancel", "logprobs-bad":
+				want := "GEN 3 logprobs=2 allowed=8,9 12,34"
+				if mode == "logprobs-geni" {
+					want = "GENI 3 logprobs=2 allowed=8,9 /tmp/vision.bin 12,34"
+				}
+				if line != want {
+					fmt.Println("ERR unexpected command")
+					continue
+				}
+				fmt.Println("T 42")
+				if mode == "logprobs" || mode == "logprobs-geni" {
+					fmt.Println("LP -0.25 9:-1.5 8:-2")
+					fmt.Println("PP 1 2 1 2")
+					fmt.Println("T 43")
+					fmt.Println("LP -0.5")
+				} else if mode == "logprobs-bad" {
+					fmt.Println("LP bad")
+				} else if mode == "logprobs-missing" {
+					fmt.Println("T 43")
+				}
+				fmt.Println("DONE 2 2 1 2 stop")
 			case "bias-gen", "bias-geni":
 				want := "GEN 3 logit_bias=0:-100,7:0.5,2147483647:100 12,34"
 				if mode == "bias-geni" {

@@ -299,7 +299,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	}
 	var result generationResult
 	if err == nil {
-		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, s.repeatStop)
+		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, nil, s.repeatStop)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

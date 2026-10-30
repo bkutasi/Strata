@@ -26,7 +26,7 @@ func TestHelperProcess(t *testing.T) {
 	}
 	switch os.Args[3] {
 	case "engine", "engine-tool", "engine-cancel", "engine-deep-tool", "engine-deep-reason",
-		"engine-topk-20", "engine-topk-64", "engine-topk-default", "engine-sampling":
+		"engine-topk-20", "engine-topk-64", "engine-topk-default", "engine-sampling", "engine-logprobs", "engine-logprobs-json", "engine-logprobs-thinking", "engine-logprobs-repair":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -58,9 +58,20 @@ func TestHelperProcess(t *testing.T) {
 					text = `<｜DSML｜ calls><｜DSML｜ invoke name="lookup"><｜DSML｜ parameter name="x" string="true">123</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>`
 				} else if os.Args[3] == "engine-deep-reason" {
 					text = "fallback answer"
+				} else if os.Args[3] == "engine-logprobs" {
+					text = "Café costs €5."
+				} else if os.Args[3] == "engine-logprobs-json" {
+					text = "```json\n{\"x\": 1}\n```"
+				} else if os.Args[3] == "engine-logprobs-thinking" {
+					text = "think</think>\n\nanswer"
+				} else if os.Args[3] == "engine-logprobs-repair" {
+					text = "think</think>\n\n{\"x\":\"\\q\"}"
 				}
 				for _, b := range []byte(text) {
 					fmt.Printf("T %d\n", b)
+					if strings.HasPrefix(os.Args[3], "engine-logprobs") && strings.Contains(scanner.Text(), " logprobs=") {
+						fmt.Println("LP -0.1 65:-0.5 72:-1.25")
+					}
 				}
 				count := len(text)
 				if strings.HasPrefix(os.Args[3], "engine-deep-") {
@@ -241,9 +252,9 @@ func TestChatInactiveLogprobs(t *testing.T) {
 		}
 	}
 	for _, value := range []string{"true", "0", "-0", "5", "123456789012345678901234567890"} {
-		body := `{"messages":[{"role":"user","content":"Hi"}],"logprobs":` + value + `}`
+		body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,"logprobs":` + value + `}`
 		status, raw := request(t, ts.Client(), url, body, "secret")
-		if status != http.StatusBadRequest || !strings.Contains(raw, "logprobs") {
+		if status != http.StatusOK || strings.Contains(raw, `"logprobs":`) {
 			t.Fatalf("%s: status %d, body %s", value, status, raw)
 		}
 	}

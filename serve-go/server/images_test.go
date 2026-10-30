@@ -226,7 +226,7 @@ func TestImageEmbeddingsOnContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := &continuationImageEngine{budgetEngine: budgetEngine{segments: [][]int{bytesAsTokens("thought"), bytesAsTokens("answer")}}}
-	_, err = generateWithEmbeddings(context.Background(), e, tok, parser, []int{'H'}, 300, engine.Sampling{}, nil, 3, "", func([]outputparser.Event) error { return nil }, "image-file")
+	_, err = generateWithEmbeddings(context.Background(), e, tok, parser, []int{'H'}, 300, engine.Sampling{}, nil, 3, "", func([]outputparser.Event) error { return nil }, "image-file", nil)
 	if err != nil || len(e.paths) != 2 || e.paths[0] != "image-file" || e.paths[1] != "image-file" {
 		t.Fatalf("paths=%v err=%v", e.paths, err)
 	}

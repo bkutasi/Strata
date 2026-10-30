@@ -312,16 +312,31 @@ type Sampling struct {
 	RepetitionPenalty, FrequencyPenalty, PresencePenalty *float64
 	Seed                                                 *uint64
 	LogitBias                                            map[int]float64
+	Logprobs                                             *int
+	AllowedTokenIDs                                      []int
 	DisableCheckpoint                                    bool
+}
+
+// Logprob describes the sampled token and the ordered native alternatives.
+type Logprob struct {
+	Value        float64
+	Alternatives []LogprobAlternative
+}
+
+type LogprobAlternative struct {
+	TokenID int
+	Value   float64
 }
 
 // RequestOptions configures a text request. OnToken runs synchronously in
 // protocol order, after the token is appended to Result and before DONE.
-// It must not call Generate or Close on the same Engine.
+// OnLogprob runs immediately before OnToken, with nil if no LP was emitted.
+// Callbacks must not call Generate or Close on the same Engine.
 type RequestOptions struct {
 	Sampling       Sampling
 	EmbeddingsPath string
 	OnToken        func(int) error
+	OnLogprob      func(int, *Logprob) error
 }
 
 func samplingKeys(s Sampling) (string, error) {
@@ -389,6 +404,26 @@ func samplingKeys(s Sampling) (string, error) {
 	}
 	if s.DisableCheckpoint {
 		keys.WriteString(" ckpt=0")
+	}
+	if s.Logprobs != nil {
+		if *s.Logprobs < 0 || *s.Logprobs > 20 {
+			return "", errors.New("invalid logprobs")
+		}
+		fmt.Fprintf(&keys, " logprobs=%d", *s.Logprobs)
+		if len(s.AllowedTokenIDs) > 0 {
+			keys.WriteString(" allowed=")
+			for i, id := range s.AllowedTokenIDs {
+				if id < 0 || int64(id) > math.MaxInt32 {
+					return "", errors.New("invalid allowed token ID")
+				}
+				if i > 0 {
+					keys.WriteByte(',')
+				}
+				fmt.Fprintf(&keys, "%d", id)
+			}
+		}
+	} else if len(s.AllowedTokenIDs) > 0 {
+		return "", errors.New("allowed token IDs require logprobs")
 	}
 	if len(s.LogitBias) > 0 {
 		ids := make([]int, 0, len(s.LogitBias))
@@ -501,6 +536,8 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	ctxDone := ctx.Done()
 	var cancelled error
 	stopping := false
+	var pending *int
+	var carried *record
 	defer func() {
 		if timer != nil {
 			timer.Stop()
@@ -515,7 +552,7 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				e.abort()
 				return result, cancelled
 			}
-			if !stopping {
+			if !stopping && (carried == nil || !strings.HasPrefix(carried.line, "DONE ")) {
 				stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 				err := e.writeCommand(stopCtx, "STOP\n")
 				stopCancel()
@@ -524,9 +561,15 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				}
 				timer = time.NewTimer(time.Second)
 				cancel = timer.C
-			} else {
+			} else if timer != nil {
 				timer.Reset(time.Second)
 			}
+		}
+		var records <-chan record = e.records
+		if carried != nil {
+			ch := make(chan record, 1)
+			ch <- *carried
+			records = ch
 		}
 		select {
 		case <-ctxDone:
@@ -537,7 +580,10 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				return result, errors.New("engine did not finish after STOP")
 			}
 			return result, cancelled
-		case r, ok := <-e.records:
+		case r, ok := <-records:
+			if carried != nil {
+				carried = nil
+			}
 			if !ok || r.err != nil {
 				e.abort()
 				if cancelled != nil {
@@ -549,6 +595,56 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 			if len(f) == 0 {
 				e.abort()
 				return result, errors.New("empty engine record")
+			}
+			var lp *Logprob
+			if pending != nil {
+				if f[0] == "LP" {
+					lp, err = parseLogprob(f)
+					if err != nil {
+						lp = nil
+					}
+				} else {
+					carried = &r
+				}
+				id := *pending
+				pending = nil
+				if !stopping && cancelled == nil && ctx.Err() == nil {
+					err := func() error {
+						returned := false
+						defer func() {
+							if !returned {
+								e.abort()
+							}
+						}()
+						var err error
+						if opts.OnLogprob != nil {
+							err = opts.OnLogprob(id, lp)
+						}
+						if err == nil && ctx.Err() == nil && opts.OnToken != nil {
+							err = opts.OnToken(id)
+						}
+						returned = true
+						return err
+					}()
+					if errors.Is(err, ErrStopGeneration) {
+						stopping = true
+						if e.CanStop && (carried == nil || !strings.HasPrefix(carried.line, "DONE ")) {
+							stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+							err = e.writeCommand(stopCtx, "STOP\n")
+							stopCancel()
+							if err != nil {
+								e.abort()
+								return result, err
+							}
+							timer = time.NewTimer(300 * time.Second)
+							cancel = timer.C
+						}
+					} else if err != nil {
+						e.abort()
+						return result, err
+					}
+				}
+				continue
 			}
 			switch f[0] {
 			case "T":
@@ -562,6 +658,41 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 					return result, fmt.Errorf("malformed token record %q", r.line)
 				}
 				result.Tokens = append(result.Tokens, int(id))
+				if opts.Sampling.Logprobs != nil {
+					token := int(id)
+					pending = &token
+					continue
+				}
+				if !stopping && cancelled == nil && ctx.Err() == nil && opts.OnLogprob != nil {
+					err := func() error {
+						returned := false
+						defer func() {
+							if !returned {
+								e.abort()
+							}
+						}()
+						err := opts.OnLogprob(int(id), nil)
+						returned = true
+						return err
+					}()
+					if err != nil {
+						if !errors.Is(err, ErrStopGeneration) {
+							e.abort()
+							return result, err
+						}
+						stopping = true
+						if e.CanStop {
+							stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+							err = e.writeCommand(stopCtx, "STOP\n")
+							stopCancel()
+							if err != nil {
+								return result, err
+							}
+							timer = time.NewTimer(300 * time.Second)
+							cancel = timer.C
+						}
+					}
+				}
 				if !stopping && cancelled == nil && ctx.Err() == nil && opts.OnToken != nil {
 					err := func() error {
 						returned := false
@@ -622,6 +753,38 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 			}
 		}
 	}
+}
+
+func parseLogprob(f []string) (*Logprob, error) {
+	if len(f) < 2 || f[0] != "LP" {
+		return nil, errors.New("malformed LP")
+	}
+	// The native engine uses these values when logits are unavailable.
+	if len(f) == 2 && (strings.EqualFold(f[1], "nan") || strings.EqualFold(f[1], "-nan(ind)")) {
+		return nil, nil
+	}
+	parseValue := func(s string) (float64, error) {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, errors.New("malformed LP value")
+		}
+		return v, nil
+	}
+	value, err := parseValue(f[1])
+	if err != nil {
+		return nil, err
+	}
+	lp := &Logprob{Value: value}
+	for _, item := range f[2:] {
+		idText, valueText, ok := strings.Cut(item, ":")
+		id, idErr := strconv.ParseInt(idText, 10, 32)
+		v, valueErr := parseValue(valueText)
+		if !ok || idErr != nil || id < 0 || valueErr != nil {
+			return nil, errors.New("malformed LP alternative")
+		}
+		lp.Alternatives = append(lp.Alternatives, LogprobAlternative{TokenID: int(id), Value: v})
+	}
+	return lp, nil
 }
 
 func parseDone(f []string, r *Result) error {
