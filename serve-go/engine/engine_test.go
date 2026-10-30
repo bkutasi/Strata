@@ -325,6 +325,11 @@ func TestHelperProcess(t *testing.T) {
 					os.Exit(2)
 				}
 				fmt.Println("DONE 0 1 1 2 stop")
+			case "quiet-ack":
+				if !s.Scan() || s.Text() != "ACK" {
+					os.Exit(2)
+				}
+				fmt.Println("DONE 0 1 1 2 stop")
 			case "progress-error":
 				fmt.Println("PP 1 2 1 2")
 				_, _ = io.Copy(io.Discard, os.Stdin)
@@ -644,6 +649,23 @@ func TestSamplingAndOrderedCallbacks(t *testing.T) {
 }
 
 func TestProgressCallbackPipeAndFailure(t *testing.T) {
+	t.Run("quiet engine sends heartbeat", func(t *testing.T) {
+		e := startFake(t, "quiet-ack", &bytes.Buffer{})
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		called := false
+		_, err := e.GenerateWithOptions(ctx, []int{1}, 1, RequestOptions{
+			OnProgress: func() error {
+				called = true
+				_, err := io.WriteString(e.stdin, "ACK\n")
+				return err
+			},
+		})
+		if err != nil || !called {
+			t.Fatalf("called=%v error=%v", called, err)
+		}
+	})
+
 	t.Run("acknowledges before DONE", func(t *testing.T) {
 		e := startFake(t, "progress-ack", &bytes.Buffer{})
 		called := false
