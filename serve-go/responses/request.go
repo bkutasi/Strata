@@ -132,9 +132,6 @@ func checkRequest(req requestnorm.Value) error {
 			return unsupported(name, name+" must be a number or null")
 		}
 	}
-	if _, err := optionalString(field(req, "model"), "model"); err != nil {
-		return err
-	}
 	metadata := field(req, "metadata")
 	if metadata.Kind() != requestnorm.Null && metadata.Kind() != requestnorm.Object {
 		return unsupported("metadata", "metadata must be an object")

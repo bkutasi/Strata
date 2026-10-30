@@ -62,13 +62,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	for _, f := range root.Fields() {
 		v := f.Value
 		switch f.Name {
-		case "model":
-			if v.Kind() != requestnorm.Null {
-				m, ok := v.Text()
-				if !ok || m != s.cfg.Model {
-					err = errors.New("model not found")
-				}
-			}
 		case "stream":
 			o.stream, _ = v.Bool()
 		case "max_output_tokens":

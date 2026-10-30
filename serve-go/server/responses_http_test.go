@@ -291,7 +291,7 @@ func TestResponsesRequiredDoesNotForceTool(t *testing.T) {
 func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	h := responsesHandler(t, "hello", "stop", false)
 	for _, body := range []string{
-		`{"input":"x","model":"other"}`, `{"input":"x","stream":"yes"}`,
+		`{"input":"x","stream":"yes"}`,
 		`{"input":"x","previous_response_id":"old"}`,
 		`{"input":"x","text":{"format":{"type":"json_schema","name":"x","schema":{"type":"object"}}}}`,
 		`{"input":[{"role":"user","content":[{"type":"input_image","image_url":"http://example.test"}]}]}`,

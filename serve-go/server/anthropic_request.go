@@ -48,10 +48,7 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 		case "metadata", "service_tier":
 			// Python accepts these client metadata fields without changing generation.
 		case "model":
-			m, ok := v.Text()
-			if !ok || v.Kind() != requestnorm.String || m != s.cfg.Model {
-				return requestnorm.AnthropicResult{}, o, errors.New("model not found")
-			}
+			// Python serves the loaded model even when the requested name differs.
 		case "max_tokens":
 			if maxSeen {
 				return requestnorm.AnthropicResult{}, o, errors.New("invalid max_tokens")

@@ -216,10 +216,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "tool_choice":
 			toolChoice = v
 		case "model":
-			m, ok := v.Text()
-			if !ok || v.Kind() != requestnorm.String || m != s.cfg.Model {
-				return requestnorm.Result{}, o, errors.New("model not found")
-			}
+			// Python serves the loaded model even when the requested name differs.
 		case "stream":
 			b, ok := v.Bool()
 			if !ok {
