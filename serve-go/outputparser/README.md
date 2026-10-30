@@ -1,13 +1,15 @@
 # Incremental output parser
 
 This is a standalone Go component for the Qwen-style `OutputParser` in
-`serve/frontend.py`. It does not replace or change the Python server. It has
+`serve/frontend.py` and the DeepSeek DSML adapter in `serve/dsml.py`. It does
+not replace or change the Python server. It has
 its own module and imports the adjacent `strata/toolparser` with a local
 `replace`; no model, engine, network, or GPU is needed.
 
 ## Use
 
-Create one parser per generation with `New(Options{...})`. `Thinking` must be
+Create one parser per generation with `New(Options{...})`, or `NewDeepSeek`
+for DeepSeek DSML. `Thinking` must be
 set explicitly: unlike Python's constructor, the Go zero value is false.
 Pass normalized tools as `[]map[string]any`, using the same `name` and
 `parameters.properties` shape as the Python frontend. Treat the tool schemas
@@ -61,6 +63,8 @@ is detected.
   of supported values, and objects with at most one key, recursively.
 - Valid Unicode text and the numeric representations of the adjacent
   `toolparser`: JSON integers are `json.Number` and floats are `float64`.
+- Incremental DeepSeek DSML tag translation, string parameter handling, and
+  the natural-stop fallback for answers emitted without `</think>`.
 
 ## Explicit compatibility gaps
 
@@ -80,8 +84,7 @@ is detected.
   unpaired surrogate escapes returns `toolparser.ErrUnsupportedUnicode`
   instead of losing data. The body parser's other documented numeric and
   Unicode limits also apply.
-- DSML rewriting and its DeepSeek-specific parser are not implemented.
-  `Clean` is exposed through `Status`, not as a synchronization primitive.
+- `Clean` is exposed through `Status`, not as a synchronization primitive.
   Memory/time use is not bounded by this package: configure output/token
   limits upstream, especially for incomplete calls and very long lines.
 
