@@ -161,6 +161,15 @@ func TestResponsesParallelToolCallsFalse(t *testing.T) {
 	}
 }
 
+func TestResponsesAcceptsCodexMetadata(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	body := `{"input":"hello","prompt_cache_key":"key","client_metadata":{"x-codex-turn-metadata":"{\"request_kind\":\"turn\",\"session_id\":\"s\",\"thread_id\":\"t\"}"}}`
+	w := responsesRequest(h, "/v1/responses", body, "secret")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"text":"hello"`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestResponsesStreamLengthAndIncompleteTool(t *testing.T) {
 	h := responsesHandler(t, "partial", "length", false)
 	w := responsesRequest(h, "/v1/responses", `{"input":"x","stream":true}`, "secret")
