@@ -80,11 +80,12 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 					o.max = n
 				}
 			}
-		case "temperature", "top_p":
+		case "temperature", "top_p", "top_k", "min_p", "repetition_penalty", "repeat_penalty",
+			"frequency_penalty", "presence_penalty", "penalty_last_n", "repeat_last_n", "seed":
 			err = setSampling(&o.sampling, root, f.Name, v)
 		}
 		if err != nil {
-			fail(w, 400, "invalid_request_error", err.Error())
+			failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: f.Name, Status: 400})
 			return
 		}
 	}

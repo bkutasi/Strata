@@ -26,7 +26,9 @@ func Decode(data []byte) (*Request, error) {
 	if err = known(root, "", "input", "instructions", "tools", "tool_choice", "reasoning", "text",
 		"include", "model", "stream", "store", "temperature", "top_p", "parallel_tool_calls",
 		"max_output_tokens", "metadata", "client_metadata", "prompt_cache_key", "stop", "stop_sequences",
-		"previous_response_id", "conversation", "background", "prompt", "reasoning_budget_tokens", "thinking_budget_tokens"); err != nil {
+		"previous_response_id", "conversation", "background", "prompt", "reasoning_budget_tokens", "thinking_budget_tokens",
+		"top_k", "min_p", "repetition_penalty", "repeat_penalty", "frequency_penalty", "presence_penalty",
+		"penalty_last_n", "repeat_last_n", "seed"); err != nil {
 		return nil, err
 	}
 	return &Request{root: root}, nil

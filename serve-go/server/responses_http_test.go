@@ -161,6 +161,78 @@ func TestResponsesNumericStringSamplingValidation(t *testing.T) {
 	}
 }
 
+func TestResponsesAdditionalSampling(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	eng := &samplingCapture{}
+	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+		Engine: eng, Renderer: responsesRenderer{}, APIKeys: []string{"secret"}, MaxBody: 8192, MaxPromptBytes: 2048,
+		MaxOutputTokens: 512, MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stream := range []string{"false", "true"} {
+		body := `{"input":"Hi","stream":` + stream + `,"top_k":"20","min_p":"0.1",` +
+			`"repeat_penalty":2,"repetition_penalty":1.1,"frequency_penalty":-0.5,` +
+			`"presence_penalty":0.2,"repeat_last_n":10,"penalty_last_n":"16","seed":"123"}`
+		w := responsesRequest(h, "/v1/responses", body, "secret")
+		if w.Code != http.StatusOK {
+			t.Fatalf("stream=%s: status %d: %s", stream, w.Code, w.Body.String())
+		}
+		eng.mu.Lock()
+		s := eng.got
+		eng.mu.Unlock()
+		if s.TopK == nil || *s.TopK != 20 || s.MinP == nil || *s.MinP != 0.1 ||
+			s.RepetitionPenalty == nil || *s.RepetitionPenalty != 1.1 ||
+			s.FrequencyPenalty == nil || *s.FrequencyPenalty != -0.5 ||
+			s.PresencePenalty == nil || *s.PresencePenalty != 0.2 ||
+			s.PenaltyLastN == nil || *s.PenaltyLastN != 16 || s.Seed == nil || *s.Seed != 123 {
+			t.Fatalf("stream=%s: unexpected sampling %#v", stream, s)
+		}
+	}
+	for _, tc := range []struct {
+		value string
+		want  int
+		unset bool
+	}{
+		{"0", 64, false},
+		{"100", 64, false},
+		{"-1", 0, true},
+		{"null", 0, true},
+		{`"4.0"`, 4, false},
+	} {
+		w := responsesRequest(h, "/v1/responses", `{"input":"Hi","top_k":`+tc.value+`}`, "secret")
+		eng.mu.Lock()
+		got := eng.got.TopK
+		eng.mu.Unlock()
+		if w.Code != http.StatusOK || (tc.unset && got != nil) ||
+			(!tc.unset && (got == nil || *got != tc.want)) {
+			t.Errorf("top_k=%s: status %d, top_k %v: %s", tc.value, w.Code, got, w.Body.String())
+		}
+	}
+}
+
+func TestResponsesAdditionalSamplingValidation(t *testing.T) {
+	h := responsesHandler(t, "answer", "stop", false)
+	for _, tc := range []struct {
+		field string
+		want  int
+	}{
+		{`"top_k":0`, http.StatusOK},
+		{`"top_k":100`, http.StatusOK},
+		{`"top_k":-1`, http.StatusOK},
+		{`"top_k":"1.5"`, http.StatusBadRequest},
+		{`"top_k":true`, http.StatusBadRequest},
+		{`"min_p":"NaN"`, http.StatusBadRequest},
+		{`"seed":true`, http.StatusBadRequest},
+		{`"penalty_last_n":1.5`, http.StatusBadRequest},
+	} {
+		w := responsesRequest(h, "/v1/responses", `{"input":"hi",`+tc.field+`}`, "secret")
+		if w.Code != tc.want {
+			t.Errorf("%s: status %d, want %d: %s", tc.field, w.Code, tc.want, w.Body.String())
+		}
+	}
+}
+
 func TestResponsesReasoningTokenUsageStream(t *testing.T) {
 	for _, tc := range []struct {
 		thinking bool

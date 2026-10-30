@@ -49,6 +49,21 @@ func samplingInteger(name string, value requestnorm.Value) (*big.Int, error) {
 }
 
 func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value requestnorm.Value) error {
+	if name == "top_k" {
+		n, err := samplingInteger(name, value)
+		if err != nil || n == nil {
+			return err
+		}
+		if n.Sign() < 0 {
+			return nil
+		}
+		k := 64
+		if n.Sign() > 0 && n.Cmp(big.NewInt(64)) <= 0 {
+			k = int(n.Int64())
+		}
+		s.TopK = &k
+		return nil
+	}
 	if name == "repeat_penalty" {
 		if canonical, ok := root.Lookup("repetition_penalty"); ok && canonical.Kind() != requestnorm.Null {
 			return nil
