@@ -171,3 +171,14 @@ Swift Heretic IQ4_XS tokenizer and a fake engine had a median Go server RSS of
 the median was 25,372 KiB. The 19,073,089-byte binary and these RSS figures
 exclude the engine and model. They do not establish a memory ceiling or a
 reliable memory saving from disabling routes.
+
+In separate model-free comparisons with that tokenizer, Go matched Python's
+token IDs for 2,000 generated texts, each tested with special-token parsing
+both on and off. Its template also matched Python's prompt bytes for 500
+generated conversations covering tool declarations, tool replies and
+reasoning settings. These samples do not establish full parity.
+
+The later 19,075,123-byte binary was measured over five runs per setting,
+after one streaming and one non-streaming Chat request in each run. Median Go
+server RSS was 25,472 KiB with all routes and 25,536 KiB with the optional
+routes disabled. The engine was fake and model weights were not loaded.
