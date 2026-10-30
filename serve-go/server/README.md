@@ -110,7 +110,10 @@ the available context, subject to `MaxOutputTokens`.
 config default accepts `pcie_frac`, `spec_min_p`, and `aux_cpus`.
 Other config fields are rejected rather than silently ignored.
 `--api-key` overrides the config key, while
-`--api-key-env` takes precedence over both. The config's host is used unless
+`--api-key-env` takes precedence over both. As in Python, `--api-key`,
+`STRATA_API_KEY` and a config string split keys on commas. A config list keeps
+each key intact, including commas. `--api-key-env` takes its environment
+variable as one literal key. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.
 This path has not been validated with every Python config.
 

@@ -29,7 +29,7 @@ type standaloneConfig struct {
 	Model             string            `json:"model_name"`
 	Aliases           json.RawMessage   `json:"aliases,omitempty"`
 	Host              string            `json:"host"`
-	APIKey            string            `json:"api_key"`
+	APIKey            json.RawMessage   `json:"api_key"`
 	GPU               *int              `json:"gpu"`
 	Env               map[string]string `json:"env"`
 	Log               string            `json:"log"`

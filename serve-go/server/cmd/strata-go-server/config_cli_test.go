@@ -43,7 +43,7 @@ func TestConfigAcceptsStrataEngineSelector(t *testing.T) {
 		t.Fatalf("invalid engine selector: %v, %s", err, output)
 	}
 	cmd := exec.Command(exe, "-test.run=^TestLifecycleFixture$", "--", "server",
-		"--engine", "strata", "--config", path, "--port", "0", "--api-key", "test-key")
+		"--engine", "strata", "--config", path, "--port", "0", "--api-key", "test-key,other-key")
 	cmd.Env = append(os.Environ(), "STRATA_LIFECYCLE_FIXTURE=1")
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -83,20 +83,22 @@ func TestConfigAcceptsStrataEngineSelector(t *testing.T) {
 	case <-timer.C:
 		t.Fatal("server did not start")
 	}
-	request, err := http.NewRequest(http.MethodGet, "http://"+address+"/v1/models", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Authorization", "Bearer test-key")
-	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := response.Body.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("models status %d", response.StatusCode)
+	for key, want := range map[string]int{"test-key": 200, "other-key": 200, "test-key,other-key": 401, "wrong": 401} {
+		request, err := http.NewRequest(http.MethodGet, "http://"+address+"/v1/models", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+key)
+		response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := response.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != want {
+			t.Errorf("key %q: models status %d, want %d", key, response.StatusCode, want)
+		}
 	}
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)

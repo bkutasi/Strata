@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +16,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -56,7 +56,7 @@ func run() error {
 	flag.Parse()
 	var processConfig engine.ProcessConfig
 	var engineLog io.Writer = os.Stderr
-	var configuredKey string
+	var configuredKey json.RawMessage
 	var defaultReasoningBudget *int
 	var repeatStopTokens *int
 	var defaultSampling engine.Sampling
@@ -166,20 +166,34 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	apiKeySet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "api-key" {
+			apiKeySet = true
+		}
+	})
 	var keys []string
-	if *apiKey != "" {
-		configuredKey = *apiKey
-	} else if key := os.Getenv("STRATA_API_KEY"); key != "" {
-		configuredKey = key
-	}
 	if *keyEnv != "" {
 		key := os.Getenv(*keyEnv)
 		if key == "" {
 			return fmt.Errorf("API key environment variable is empty")
 		}
 		keys = []string{key}
-	} else if configuredKey != "" && !strings.EqualFold(strings.TrimSpace(configuredKey), "none") {
-		keys = []string{configuredKey}
+	} else if apiKeySet {
+		if *apiKey == "" {
+			return errors.New("API key is empty")
+		}
+		keys, err = splitAPIKeys(*apiKey)
+	} else if key, ok := os.LookupEnv("STRATA_API_KEY"); ok {
+		if key == "" {
+			return errors.New("API key is empty")
+		}
+		keys, err = splitAPIKeys(key)
+	} else {
+		keys, err = configAPIKeys(configuredKey)
+	}
+	if err != nil {
+		return err
 	}
 	ip := net.ParseIP(host)
 	if len(keys) == 0 && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
