@@ -50,10 +50,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			}
 		case "stream":
 			o.stream, _ = v.Bool()
-		case "store":
-			if b, _ := v.Bool(); b {
-				err = errors.New("stored responses are not supported")
-			}
 		case "max_output_tokens":
 			if v.Kind() != requestnorm.Null {
 				text, ok := v.Integer()

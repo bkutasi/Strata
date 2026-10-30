@@ -10,6 +10,7 @@ prompts at `POST /v1/messages/count_tokens` without running generation.
 It also accepts stateless text-only requests at `POST /v1/responses`, with
 named streaming events, reasoning and completed function calls. Stored responses,
 images, structured output, and custom tools are not supported.
+As in the Python server, `store: true` is accepted but responses are not stored.
 Non-finite generated tool arguments fail the response. Tool
 argument object keys may be reordered by the parser.
 The APIs support `auto` and `none` tool choices; forced or named choices and

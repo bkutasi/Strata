@@ -114,7 +114,7 @@ func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	h := responsesHandler(t, "hello", "stop", false)
 	for _, body := range []string{
 		`{"input":"x","model":"other"}`, `{"input":"x","stream":"yes"}`,
-		`{"input":"x","store":true}`, `{"input":"x","previous_response_id":"old"}`,
+		`{"input":"x","previous_response_id":"old"}`,
 		`{"input":"x","text":{"format":{"type":"json_object"}}}`,
 		`{"input":[{"role":"user","content":[{"type":"input_image","image_url":"http://example.test"}]}]}`,
 		`{"input":"x","max_output_tokens":9999}`, `{"input":"x","top_p":0}`,
@@ -130,6 +130,14 @@ func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	w := responsesRequest(h, "/v1/chat/completions", `{"model":"test","messages":[{"role":"user","content":"x"}]}`, "secret")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "hello") {
 		t.Fatalf("chat: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestResponsesStoreTrueRemainsStateless(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	w := responsesRequest(h, "/v1/responses", `{"input":"hello","store":true}`, "secret")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"store":false`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }
 
