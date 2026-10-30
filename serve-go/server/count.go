@@ -78,6 +78,21 @@ func (s *server) decodeAnthropicCount(data []byte) (requestnorm.AnthropicResult,
 	if _, err := parseStops(root); err != nil {
 		return requestnorm.AnthropicResult{}, err
 	}
+	if s.cfg.DefaultReasoningEffort != "" {
+		thinking, _ := root.Lookup("thinking")
+		output, _ := root.Lookup("output_config")
+		if !effortTruthy(thinking) && !effortTruthy(output) {
+			if s.cfg.DefaultReasoningEffort == "none" {
+				fields["thinking"] = json.RawMessage(`{"type":"disabled"}`)
+			} else {
+				value, err := json.Marshal(map[string]string{"effort": s.cfg.DefaultReasoningEffort})
+				if err != nil {
+					return requestnorm.AnthropicResult{}, err
+				}
+				fields["output_config"] = value
+			}
+		}
+	}
 	encoded, err := json.Marshal(fields)
 	if err != nil {
 		return requestnorm.AnthropicResult{}, err

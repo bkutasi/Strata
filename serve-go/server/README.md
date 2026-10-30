@@ -76,9 +76,12 @@ For compatibility with the Python command, `--engine strata` can also be
 given with `--config`; the executable still comes from the config.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
 integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens`,
-`answer_room`, `repeat_stop_tokens`, `anthropic_thinking` and the `sampling`
-block for standard sampling parameters. Sampling defaults apply when a request
-omits the field or sets it to null; explicit request values take precedence.
+`reasoning_effort`, `answer_room`, `repeat_stop_tokens`, `anthropic_thinking`
+and the `sampling` block for standard sampling parameters. The optional
+`reasoning_effort` accepts `none`, `low`, `medium` or `high`; it supplies the
+default across Chat, Responses and Anthropic APIs, and an explicit request
+value takes precedence. Sampling defaults apply when a request omits the field
+or sets it to null; explicit request values take precedence.
 The `strata_tune` and `experimental_speed_projection` sampling defaults are
 not supported. Other config fields are rejected rather than silently ignored.
 `--api-key` overrides the config key, while

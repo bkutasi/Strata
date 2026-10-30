@@ -33,6 +33,7 @@ type standaloneConfig struct {
 	RepeatStop        json.RawMessage   `json:"repeat_stop_tokens,omitempty"`
 	AnthropicThinking string            `json:"anthropic_thinking,omitempty"`
 	Sampling          json.RawMessage   `json:"sampling,omitempty"`
+	ReasoningEffort   string            `json:"reasoning_effort,omitempty"`
 }
 
 func (c standaloneConfig) repeatStopConfig() (*int, error) {
@@ -118,6 +119,11 @@ func readStandaloneConfig(path string) (standaloneConfig, error) {
 	}
 	if cfg.AnthropicThinking != "" && cfg.AnthropicThinking != "model" && cfg.AnthropicThinking != "on_request" {
 		return cfg, errors.New(`invalid config: anthropic_thinking must be "model" or "on_request"`)
+	}
+	switch cfg.ReasoningEffort {
+	case "", "none", "low", "medium", "high":
+	default:
+		return cfg, errors.New(`invalid config: reasoning_effort must be none, low, medium or high`)
 	}
 	if !filepath.IsAbs(cfg.Exe) {
 		cfg.Exe, err = filepath.Abs(filepath.Join(cfg.Cwd, cfg.Exe))

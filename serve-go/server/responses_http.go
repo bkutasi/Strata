@@ -43,7 +43,15 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		failResponsesRequest(w, err)
 		return
 	}
-	prepared, err := responses.Prepare(req, responses.PrepareOptions{Family: s.cfg.Family})
+	var sharedEffort requestnorm.Value
+	if s.cfg.DefaultReasoningEffort != "" {
+		sharedEffort, err = requestnorm.ParseValue([]byte(strconv.Quote(s.cfg.DefaultReasoningEffort)))
+		if err != nil {
+			failResponsesRequest(w, err)
+			return
+		}
+	}
+	prepared, err := responses.Prepare(req, responses.PrepareOptions{Family: s.cfg.Family, SharedReasoningEffort: sharedEffort})
 	if err != nil {
 		failResponsesRequest(w, err)
 		return

@@ -40,6 +40,7 @@ type Config struct {
 	RepeatStopTokens           *int
 	AnthropicThinkingOnRequest bool
 	DefaultSampling            engine.Sampling
+	DefaultReasoningEffort     string
 }
 
 // Engine is the native generation service used by the handler.
@@ -321,6 +322,21 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	req, err := requestnorm.DecodeOpenAI(b)
 	if err != nil {
 		return requestnorm.Result{}, o, err
+	}
+	if s.cfg.DefaultReasoningEffort != "" {
+		effort, _ := root.Lookup("reasoning_effort")
+		reasoning, _ := root.Lookup("reasoning")
+		options, _ := root.Lookup("chat_template_kwargs")
+		_, hasThinking := options.Lookup("enable_thinking")
+		_, hasEffort := options.Lookup("reasoning_effort")
+		text, _ := effort.Text()
+		if (effort.Kind() == requestnorm.Null || (effort.Kind() == requestnorm.String && text == "")) &&
+			!effortTruthy(reasoning) && !hasThinking && !hasEffort {
+			req.ReasoningEffort, err = requestnorm.ParseValue([]byte(strconv.Quote(s.cfg.DefaultReasoningEffort)))
+			if err != nil {
+				return requestnorm.Result{}, o, err
+			}
+		}
 	}
 	for _, m := range req.Messages {
 		for _, p := range m.Content.Parts {

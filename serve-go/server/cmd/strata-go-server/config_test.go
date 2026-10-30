@@ -132,3 +132,24 @@ func TestStandaloneAnthropicThinkingConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestStandaloneReasoningEffortConfig(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		ok    bool
+	}{
+		{``, true}, {`,"reasoning_effort":null`, true}, {`,"reasoning_effort":""`, true},
+		{`,"reasoning_effort":"none"`, true}, {`,"reasoning_effort":"low"`, true},
+		{`,"reasoning_effort":"medium"`, true}, {`,"reasoning_effort":"high"`, true},
+		{`,"reasoning_effort":"xhigh"`, false}, {`,"reasoning_effort":true`, false},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, []byte(`{"exe":"e","tokenizer":"t","model_name":"m"`+tc.field+`}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := readStandaloneConfig(path)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: error %v, want ok=%v", tc.field, err, tc.ok)
+		}
+	}
+}
