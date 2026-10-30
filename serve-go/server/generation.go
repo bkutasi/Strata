@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 
 	"strata/engine"
 	"strata/outputparser"
@@ -19,6 +21,33 @@ type generationResult struct {
 	result  engine.Result
 	count   int
 	stopped bool
+	cached  int
+}
+
+// DONE extras contain drafts accepted/offered, reused tokens, and optionally
+// prompt tokens actually read. Older engines omit those fields.
+func cachedPromptTokens(result engine.Result, prompt int, stopped bool) (int, error) {
+	cached := 0
+	if len(result.Extra) >= 3 {
+		n, err := strconv.Atoi(result.Extra[2])
+		if err != nil || n < 0 {
+			return 0, fmt.Errorf("invalid engine reused token count %q", result.Extra[2])
+		}
+		cached = n
+	}
+	if len(result.Extra) >= 9 && !stopped && result.Finish != "cancel" {
+		read, err := strconv.Atoi(result.Extra[8])
+		if err != nil || read < 0 {
+			return 0, fmt.Errorf("invalid engine prompt read count %q", result.Extra[8])
+		}
+		if prompt-read > cached {
+			cached = prompt - read
+		}
+	}
+	if cached > prompt {
+		cached = prompt
+	}
+	return cached, nil
 }
 
 // generate pumps engine tokens through the tokenizer and parser. The callback
@@ -59,6 +88,10 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 	if errors.Is(err, engine.ErrStopGeneration) {
 		err = nil
 	}
+	if err != nil {
+		return out, err
+	}
+	out.cached, err = cachedPromptTokens(result, len(ids), stoppedToken)
 	if err != nil {
 		return out, err
 	}

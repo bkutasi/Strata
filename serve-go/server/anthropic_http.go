@@ -191,6 +191,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 	if hit := matcher.Hit(); hit != "" {
 		stop = &hit
 	}
+	adapter.cacheRead = result.cached
 	events, err := adapter.Finish(finish, stop, result.count)
 	if err == nil {
 		err = send(events)

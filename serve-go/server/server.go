@@ -516,7 +516,8 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	if deep, ok := parser.(*outputparser.DeepSeekParser); ok && deep.ReasoningFallback() && !opt.stream {
 		reason.Reset()
 	}
-	usage := map[string]int{"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count}
+	usage := map[string]any{"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count,
+		"prompt_tokens_details": map[string]int{"cached_tokens": pumped.cached}}
 	if opt.stream {
 		if send(map[string]any{}, finish, usage) == nil {
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")

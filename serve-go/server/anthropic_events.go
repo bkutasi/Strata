@@ -23,6 +23,7 @@ type anthropicAdapter struct {
 	open        string
 	usedTool    bool
 	inputTokens int
+	cacheRead   int
 	id          string
 	model       string
 }
@@ -117,10 +118,14 @@ func (a *anthropicAdapter) Finish(finish string, stopSequence *string, completio
 	if inputRead > 0 {
 		inputRead = 1
 	}
+	cacheRead := a.cacheRead
+	if cacheRead > a.inputTokens-inputRead {
+		cacheRead = a.inputTokens - inputRead
+	}
 	out = append(out, anthropicEvent{"message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": stopSequence},
-		"usage": map[string]int{"input_tokens": inputRead, "cache_creation_input_tokens": a.inputTokens - inputRead, "cache_read_input_tokens": 0, "output_tokens": completionTokens},
+		"usage": map[string]int{"input_tokens": inputRead, "cache_creation_input_tokens": a.inputTokens - inputRead - cacheRead, "cache_read_input_tokens": cacheRead, "output_tokens": completionTokens},
 	}})
 	out = append(out, anthropicEvent{"message_stop", map[string]any{"type": "message_stop"}})
 	return out, nil

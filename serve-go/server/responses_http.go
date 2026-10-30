@@ -244,7 +244,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if result.stopped || finish == "cancel" {
 		finish = "stop"
 	}
-	events, err = a.Finish(responses.Done{Finish: finish, CompletionTokens: int64(result.count)})
+	events, err = a.Finish(responses.Done{Finish: finish, CompletionTokens: int64(result.count), Reused: int64(result.cached)})
 	if err == nil {
 		err = send(events)
 	}
