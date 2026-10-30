@@ -223,6 +223,8 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			o.stream = b
 		case "stream_options":
 			// Python ignores this field and always includes usage in the final chunk.
+		case "user", "metadata", "service_tier", "safety_identifier", "prompt_cache_key":
+			// Python accepts these client metadata fields without changing generation.
 		case "max_tokens", "max_completion_tokens":
 			if maxSet {
 				return requestnorm.Result{}, o, errors.New("provide only one max token field")

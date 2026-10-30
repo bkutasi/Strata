@@ -133,6 +133,15 @@ func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	}
 }
 
+func TestChatAcceptsClientMetadata(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	body := `{"messages":[{"role":"user","content":"hi"}],"user":"client","metadata":{"key":"value"},"service_tier":"auto","safety_identifier":"id","prompt_cache_key":"cache"}`
+	w := responsesRequest(h, "/v1/chat/completions", body, "secret")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"content":"hello"`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestResponsesParallelToolCallsFalse(t *testing.T) {
 	h := responsesHandler(t, "hello", "stop", false)
 	for _, stream := range []string{"false", "true"} {
