@@ -4,9 +4,11 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -91,6 +93,31 @@ func lifecyclePack(t *testing.T) string {
 		}
 	}
 	return dir
+}
+
+func TestOccupiedPortFailsBeforeEngineStarts(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestLifecycleFixture$", "--", "server",
+		"-listen", listener.Addr().String(), "-model", "test", "-pack", lifecyclePack(t), "-engine", exe,
+		"-engine-arg=-test.run=^TestLifecycleFixture$", "-engine-arg=--", "-engine-arg=engine")
+	cmd.Env = append(os.Environ(), "STRATA_LIFECYCLE_FIXTURE=1")
+	output, err := cmd.CombinedOutput()
+	if err == nil || ctx.Err() != nil || !strings.Contains(string(output), "address already in use") {
+		t.Fatalf("error=%v context=%v output=%s", err, ctx.Err(), output)
+	}
+	if strings.Contains(string(output), "fixture-engine-pid ") {
+		t.Fatalf("engine started despite occupied port: %s", output)
+	}
 }
 
 func TestSIGTERMStopsServerAndEngine(t *testing.T) {

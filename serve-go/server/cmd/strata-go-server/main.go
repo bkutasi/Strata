@@ -185,6 +185,11 @@ func run() error {
 	if len(keys) == 0 && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("non-loopback listening requires an API key")
 	}
+	ln, err := net.Listen("tcp", *listen)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithCancel(signalCtx)
 	var owner *os.File
@@ -279,10 +284,6 @@ func run() error {
 	}
 	// Release temporary vocabulary and template-loading buffers before serving.
 	debug.FreeOSMemory()
-	ln, err := net.Listen("tcp", *listen)
-	if err != nil {
-		return err
-	}
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	log.Printf("experimental Go server listening on %s", ln.Addr())
 	return serveUntilShutdown(ctx, httpServer, ln)

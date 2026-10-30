@@ -66,7 +66,7 @@ Python's validator. Like the Python server, Chat rejects structured output
 when tools are enabled; Responses applies it to the final answer rather than
 tool calls.
 
-Build with Go 1.26.10:
+From `serve-go/server`, build with Go 1.26.10:
 
 ```sh
 go build -o strata-go-server ./cmd/strata-go-server
@@ -91,6 +91,9 @@ The server also accepts a limited standalone Python JSON run config:
 `strata-go-server --config /absolute/path/run.json --port 50000 --api-key-env STRATA_API_KEY`.
 For compatibility with the Python command, `--engine strata` can also be
 given with `--config`; the executable still comes from the config.
+The Go server starts its own engine; it cannot attach to the engine owned by
+an already running Python server. It checks the listening port before starting
+the engine. Running two engines needs enough memory for both model loads.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
 integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens`,
 `reasoning_effort`, `answer_room`, `fit_max_tokens`, `repeat_stop_tokens`, `anthropic_thinking`
@@ -161,3 +164,10 @@ A separate real-model smoke test used the orca Q4_K_M config, its requested
 request succeeded on each API. The Go server process used 24,952 KiB RSS after
 those requests; that excludes the native engine and model and is above 25 MB
 (decimal). This single run did not establish full parity or a memory ceiling.
+
+On Linux with a Ryzen 7 9800X3D, five model-free runs using the
+Swift Heretic IQ4_XS tokenizer and a fake engine had a median Go server RSS of
+25,480 KiB after one short Chat request. With `--no-responses --no-anthropic`,
+the median was 25,372 KiB. The 19,073,089-byte binary and these RSS figures
+exclude the engine and model. They do not establish a memory ceiling or a
+reliable memory saving from disabling routes.
