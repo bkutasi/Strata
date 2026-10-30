@@ -241,6 +241,90 @@ func TestHTTPIntegration(t *testing.T) {
 	}
 }
 
+func TestAnthropicCountTokens(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"model":"test","messages":[{"role":"user","content":"Hi"}],"temperature":"0.7"}`
+	for _, path := range []string{"/v1/messages/count_tokens", "/v1/v1/messages/count_tokens"} {
+		status, raw := request(t, ts.Client(), ts.URL+path, body, "secret")
+		var result struct {
+			InputTokens int `json:"input_tokens"`
+		}
+		if err := json.Unmarshal([]byte(raw), &result); status != http.StatusOK || err != nil || result.InputTokens != 2 {
+			t.Fatalf("%s: status %d, body %s, error %v", path, status, raw, err)
+		}
+	}
+	valid := `{"messages":[{"role":"user","content":"Hi"}],"top_k":"40","temperature":null,` +
+		`"stop":"ok","stop_sequences":"ignored"}`
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/messages/count_tokens", valid, "secret")
+	if status != http.StatusOK || !strings.Contains(raw, `"input_tokens":2`) {
+		t.Fatalf("valid input: status %d, body %s", status, raw)
+	}
+	for _, invalid := range []string{
+		`{"messages":[{"role":"user","content":"Hi"}],"temperature":"hot"}`,
+		`{"messages":[{"role":"user","content":"Hi"}],"temperature":"0x1p0"}`,
+		`{"messages":[{"role":"user","content":"Hi"}],"top_k":1.0}`,
+		`{"messages":[{"role":"user","content":"Hi"}],"stop_sequences":"bad"}`,
+		`{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.test"}}]}]}`,
+		`{"messages":[{"role":"user","content":"Hi"}],"unknown":1}`,
+	} {
+		status, raw := request(t, ts.Client(), ts.URL+"/v1/messages/count_tokens", invalid, "secret")
+		if status != http.StatusBadRequest {
+			t.Fatalf("invalid input %s: status %d, body %s", invalid, status, raw)
+		}
+	}
+	status, _ = request(t, ts.Client(), ts.URL+"/v1/messages/count_tokens", body, "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status %d", status)
+	}
+}
+
+type countOnlyEngine struct{ called chan struct{} }
+
+func (e *countOnlyEngine) Alive() bool       { return true }
+func (e *countOnlyEngine) ContextLimit() int { return 4096 }
+func (e *countOnlyEngine) GenerateWithOptions(context.Context, []int, int, engine.RequestOptions) (engine.Result, error) {
+	select {
+	case e.called <- struct{}{}:
+	default:
+	}
+	return engine.Result{}, fmt.Errorf("counting must not generate")
+}
+
+func TestAnthropicCountPreservesEmptyReasoningWithoutGeneration(t *testing.T) {
+	tok, dir := syntheticTokenizer(t)
+	template := `{{ "Y" if messages[0].reasoning_content is defined else "NN" }}`
+	if err := os.WriteFile(filepath.Join(dir, "chat_template.jinja"), []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewTemplateRenderer(dir, tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &countOnlyEngine{called: make(chan struct{}, 1)}
+	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok, Engine: eng,
+		Renderer: renderer, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 200, MaxConcurrent: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":""}]}]}`
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/messages/count_tokens", body, "")
+	var result struct {
+		InputTokens int `json:"input_tokens"`
+	}
+	if err := json.Unmarshal([]byte(raw), &result); status != http.StatusOK || err != nil || result.InputTokens != 1 {
+		t.Fatalf("status %d, body %s, error %v", status, raw, err)
+	}
+	select {
+	case <-eng.called:
+		t.Fatal("counting invoked generation")
+	default:
+	}
+}
+
 func TestServerRecoversAfterClientCancellation(t *testing.T) {
 	h, _ := setupEngine(t, "engine-cancel")
 	ts := httptest.NewServer(h)

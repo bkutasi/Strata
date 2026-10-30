@@ -57,15 +57,23 @@ func NewTemplateRenderer(pack string, tokenizer *modeltokenizer.Tokenizer) (*Tem
 }
 
 func (r *TemplateRenderer) Render(ctx context.Context, input requestnorm.Result) (Rendered, error) {
-	messages, err := json.Marshal(input.Messages)
+	return r.render(ctx, input.Messages, input.Tools, input.Kwargs)
+}
+
+func (r *TemplateRenderer) RenderAnthropic(ctx context.Context, input requestnorm.AnthropicResult) (Rendered, error) {
+	return r.render(ctx, input.Messages, input.Tools, input.Kwargs)
+}
+
+func (r *TemplateRenderer) render(ctx context.Context, inputMessages any, inputTools []requestnorm.Value, inputKwargs requestnorm.Value) (Rendered, error) {
+	messages, err := json.Marshal(inputMessages)
 	if err != nil {
 		return Rendered{}, err
 	}
-	tools, err := json.Marshal(input.Tools)
+	tools, err := json.Marshal(inputTools)
 	if err != nil {
 		return Rendered{}, err
 	}
-	kwargs, err := json.Marshal(input.Kwargs)
+	kwargs, err := json.Marshal(inputKwargs)
 	if err != nil {
 		return Rendered{}, err
 	}
@@ -85,7 +93,7 @@ func (r *TemplateRenderer) Render(ctx context.Context, input requestnorm.Result)
 		return Rendered{}, fmt.Errorf("render template: %w", err)
 	}
 	thinking := true
-	if v, ok := input.Kwargs.Lookup("enable_thinking"); ok {
+	if v, ok := inputKwargs.Lookup("enable_thinking"); ok {
 		if b, ok := v.Bool(); ok {
 			thinking = b
 		}

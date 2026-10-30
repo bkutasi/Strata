@@ -123,7 +123,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": models})
 		return
 	}
-	if r.URL.Path != "/v1/chat/completions" {
+	countTokens := r.URL.Path == "/v1/messages/count_tokens" || r.URL.Path == "/v1/v1/messages/count_tokens"
+	if r.URL.Path != "/v1/chat/completions" && !countTokens {
 		fail(w, http.StatusNotImplemented, "unsupported_endpoint", "endpoint is not implemented")
 		return
 	}
@@ -132,7 +133,11 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusMethodNotAllowed, "invalid_request_error", "POST required")
 		return
 	}
-	s.chat(w, r)
+	if countTokens {
+		s.countTokens(w, r)
+	} else {
+		s.chat(w, r)
+	}
 }
 
 type options struct {
