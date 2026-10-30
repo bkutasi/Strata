@@ -34,6 +34,7 @@ func run() error {
 	var engineArgs args
 	listen := flag.String("listen", "127.0.0.1:8080", "listen address")
 	model := flag.String("model", "", "model name exposed to clients")
+	family := flag.String("family", "qwen", "model family (qwen or deepseek41)")
 	pack := flag.String("pack", "", "model pack or tokenizer directory")
 	engineExe := flag.String("engine", "", "native executable")
 	keyEnv := flag.String("api-key-env", "", "environment variable containing API key")
@@ -42,6 +43,10 @@ func run() error {
 	if flag.NArg() != 0 || *model == "" || *pack == "" || *engineExe == "" {
 		flag.Usage()
 		os.Exit(2)
+	}
+	selectedFamily := requestnorm.Family(*family)
+	if selectedFamily != requestnorm.FamilyQwen && selectedFamily != requestnorm.FamilyDeepSeek {
+		return fmt.Errorf("unsupported model family %q", *family)
 	}
 	host, _, err := net.SplitHostPort(*listen)
 	if err != nil {
@@ -89,7 +94,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Family: requestnorm.FamilyQwen, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: 4096, MaxConcurrent: 4})
+	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: 4096, MaxConcurrent: 4})
 	if err != nil {
 		return err
 	}

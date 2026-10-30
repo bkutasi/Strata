@@ -52,16 +52,20 @@ type server struct {
 }
 
 func New(c Config) (http.Handler, error) {
-	if c.Model == "" || c.Family != requestnorm.FamilyQwen || c.Tokenizer == nil || c.Engine == nil || c.Renderer == nil ||
+	if c.Model == "" || (c.Family != requestnorm.FamilyQwen && c.Family != requestnorm.FamilyDeepSeek) || c.Tokenizer == nil || c.Engine == nil || c.Renderer == nil ||
 		c.MaxBody <= 0 || c.MaxPromptBytes <= 0 || c.MaxOutputTokens <= 0 || c.MaxConcurrent <= 0 {
-		return nil, errors.New("invalid server configuration; only qwen text is supported")
+		return nil, errors.New("invalid server configuration")
 	}
 	n, err := requestnorm.NewNormalizer(c.Family)
 	if err != nil {
 		return nil, err
 	}
 	s := &server{cfg: c, normalizer: n, stopIDs: map[int]bool{}}
-	for _, tag := range []string{"<|im_end|>", "<|endoftext|>"} {
+	stopTags := []string{"<|im_end|>", "<|endoftext|>"}
+	if c.Family == requestnorm.FamilyDeepSeek {
+		stopTags = []string{"<｜end▁of▁sentence｜>"}
+	}
+	for _, tag := range stopTags {
 		special, e := c.Tokenizer.Encode(tag, true, nil)
 		plain, e2 := c.Tokenizer.Encode(tag, false, nil)
 		if e == nil && e2 == nil && len(special) == 1 && (len(plain) != 1 || special[0] != plain[0]) {
@@ -335,7 +339,16 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		}
 		tools = append(tools, m)
 	}
-	parser, err := outputparser.New(outputparser.Options{Thinking: rendered.Thinking, Tools: tools, DeclaredOnly: true})
+	parserOptions := outputparser.Options{Thinking: rendered.Thinking, Tools: tools, DeclaredOnly: true}
+	var parser interface {
+		Feed(string) ([]outputparser.Event, error)
+		Finish(string) ([]outputparser.Event, error)
+	}
+	if s.cfg.Family == requestnorm.FamilyDeepSeek {
+		parser, err = outputparser.NewDeepSeek(parserOptions)
+	} else {
+		parser, err = outputparser.New(parserOptions)
+	}
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
@@ -493,6 +506,9 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(calls) > 0 && finish == "stop" {
 		finish = "tool_calls"
+	}
+	if deep, ok := parser.(*outputparser.DeepSeekParser); ok && deep.ReasoningFallback() && !opt.stream {
+		reason.Reset()
 	}
 	usage := map[string]int{"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count}
 	if opt.stream {

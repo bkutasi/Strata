@@ -2,10 +2,10 @@
 
 This is an opt-in experiment, not a replacement for the Python server. It is
 not connected to `strata launch` or the desktop app. It accepts text-only Qwen
-requests at `POST /v1/chat/completions`, with streaming and a limited set of
-request fields, lists the model at `GET /v1/models`, and reports health at
-`GET /health` and `GET /api/health`. Other endpoints and model families are
-not implemented.
+and DeepSeek V4.1 requests at `POST /v1/chat/completions`, with streaming and a
+limited set of request fields, lists the model at `GET /v1/models`, and reports
+health at `GET /health` and `GET /api/health`. Other endpoints and model
+families are not implemented.
 
 Build with Go 1.26.10:
 
@@ -23,6 +23,8 @@ This server requires the tokenizer files, template, and a native engine
 executable supplied using its command-line options. The engine arguments must
 include `--serve` and the model flags. It defaults to listening on loopback;
 an API key is required for non-loopback addresses.
+Use `--family deepseek41` for DeepSeek. The pack must include a compatible
+V4.1 template; unlike Python, this experiment does not replace older templates.
 
 An interrupted generation or engine protocol error discards the engine
 process. The next request starts it again; the failed request is not retried.

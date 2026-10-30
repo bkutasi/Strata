@@ -25,7 +25,8 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 	switch os.Args[3] {
-	case "engine", "engine-tool", "engine-cancel", "engine-topk-20", "engine-topk-64", "engine-topk-default":
+	case "engine", "engine-tool", "engine-cancel", "engine-deep-tool", "engine-deep-reason",
+		"engine-topk-20", "engine-topk-64", "engine-topk-default":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -52,11 +53,21 @@ func TestHelperProcess(t *testing.T) {
 				text := "hello STOPhidden"
 				if os.Args[3] == "engine-tool" {
 					text = "<tool_call><function=lookup><parameter=x>7</parameter></function></tool_call>"
+				} else if os.Args[3] == "engine-deep-tool" {
+					text = `<｜DSML｜ calls><｜DSML｜ invoke name="lookup"><｜DSML｜ parameter name="x" string="true">123</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>`
+				} else if os.Args[3] == "engine-deep-reason" {
+					text = "fallback answer"
 				}
 				for _, b := range []byte(text) {
 					fmt.Printf("T %d\n", b)
 				}
-				fmt.Printf("DONE %d 2 1 1 stop\n", len(text))
+				count := len(text)
+				if strings.HasPrefix(os.Args[3], "engine-deep-") {
+					fmt.Println("T 257")
+					fmt.Println("T 104")
+					count += 2
+				}
+				fmt.Printf("DONE %d 2 1 1 stop\n", count)
 			}
 		}
 		os.Exit(0)
@@ -77,8 +88,12 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 		vocab[string(r)] = b
 	}
 	vocab["<control>"] = 256
-	types := make([]int, 257)
+	vocab["<｜end▁of▁sentence｜>"] = 257
+	vocab["｜DSML｜"] = 258
+	types := make([]int, 259)
 	types[256] = 3
+	types[257] = 3
+	types[258] = 4
 	write := func(name string, v any) {
 		t.Helper()
 		b, e := json.Marshal(v)
@@ -110,6 +125,10 @@ func setup(t *testing.T) (http.Handler, *engine.Engine) {
 }
 
 func setupEngine(t *testing.T, mode string) (http.Handler, *engine.Engine) {
+	return setupFamilyEngine(t, mode, requestnorm.FamilyQwen)
+}
+
+func setupFamilyEngine(t *testing.T, mode string, family requestnorm.Family) (http.Handler, *engine.Engine) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -142,7 +161,7 @@ func setupEngine(t *testing.T, mode string) (http.Handler, *engine.Engine) {
 		})
 		servingEngine = supervisor
 	}
-	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok, Engine: servingEngine, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 100, MaxConcurrent: 2})
+	h, err := New(Config{Model: "test", Family: family, Tokenizer: tok, Engine: servingEngine, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 200, MaxConcurrent: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,6 +426,78 @@ func TestHTTPToolCall(t *testing.T) {
 	if status != http.StatusOK || !strings.Contains(raw, `"name":"lookup"`) ||
 		!strings.Contains(raw, `"finish_reason":"tool_calls"`) || !strings.Contains(raw, "data: [DONE]") {
 		t.Fatalf("streamed tool response %d: %s", status, raw)
+	}
+}
+
+func TestDeepSeekToolCallAndStopToken(t *testing.T) {
+	h, _ := setupFamilyEngine(t, "engine-deep-tool", requestnorm.FamilyDeepSeek)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":200,"chat_template_kwargs":{"enable_thinking":false},` +
+		`"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"x":{"type":"integer"}}}}}]}`
+	url := ts.URL + "/v1/chat/completions"
+	status, raw := request(t, ts.Client(), url, body, "secret")
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, raw)
+	}
+	var response struct {
+		Choices []struct {
+			Finish  string `json:"finish_reason"`
+			Message struct {
+				Content *string `json:"content"`
+				Calls   []struct {
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Choices) != 1 || response.Choices[0].Finish != "tool_calls" ||
+		len(response.Choices[0].Message.Calls) != 1 {
+		t.Fatalf("tool response: %s", raw)
+	}
+	call := response.Choices[0].Message.Calls[0]
+	var args map[string]any
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil ||
+		call.Function.Name != "lookup" || args["x"] != "123" {
+		t.Fatalf("tool call: %#v, arguments: %v, error: %v", call, args, err)
+	}
+	if response.Choices[0].Message.Content != nil && strings.Contains(*response.Choices[0].Message.Content, "h") {
+		t.Fatalf("text after end token leaked: %s", raw)
+	}
+	streamBody := strings.TrimSuffix(body, "}") + `,"stream":true}`
+	status, raw = request(t, ts.Client(), url, streamBody, "secret")
+	if status != http.StatusOK || !strings.Contains(raw, `"name":"lookup"`) ||
+		!strings.Contains(raw, `"finish_reason":"tool_calls"`) || !strings.Contains(raw, "data: [DONE]") {
+		t.Fatalf("streamed tool response %d: %s", status, raw)
+	}
+}
+
+func TestDeepSeekUnclosedThinkingBecomesAnswer(t *testing.T) {
+	h, _ := setupFamilyEngine(t, "engine-deep-reason", requestnorm.FamilyDeepSeek)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32}`
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, raw)
+	}
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning_content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(raw), &response); err != nil || len(response.Choices) != 1 ||
+		response.Choices[0].Message.Content != "fallback answer" || response.Choices[0].Message.Reasoning != "" {
+		t.Fatalf("response %s: %v", raw, err)
 	}
 }
 
