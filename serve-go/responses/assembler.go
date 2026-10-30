@@ -154,6 +154,8 @@ func NewAssembler(req *Request, prepared Prepared, options AssemblerOptions) (*A
 	}
 	root := req.root
 	reasoning := field(root, "reasoning")
+	temperature, _ := responseSamplingValue(field(root, "temperature"))
+	topP, _ := responseSamplingValue(field(root, "top_p"))
 	choice := any("auto")
 	if v, present := root.Lookup("tool_choice"); present {
 		choice = valueAny(v)
@@ -193,8 +195,8 @@ func NewAssembler(req *Request, prepared Prepared, options AssemblerOptions) (*A
 			"instructions": valueAny(field(root, "instructions")), "max_output_tokens": valueAny(field(root, "max_output_tokens")),
 			"model": options.Model, "output": []any{}, "parallel_tool_calls": parallel, "previous_response_id": nil,
 			"reasoning": map[string]any{"effort": valueAny(field(reasoning, "effort")), "summary": valueAny(field(reasoning, "summary"))},
-			"store":     false, "temperature": valueAny(field(root, "temperature")), "text": text, "tool_choice": choice,
-			"tools": tools, "top_p": valueAny(field(root, "top_p")), "truncation": "disabled", "usage": nil, "user": nil,
+			"store":     false, "temperature": temperature, "text": text, "tool_choice": choice,
+			"tools": tools, "top_p": topP, "truncation": "disabled", "usage": nil, "user": nil,
 			"metadata": metadata,
 		},
 	}, nil

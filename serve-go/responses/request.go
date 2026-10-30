@@ -5,6 +5,9 @@ package responses
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
+	"strconv"
 	"strings"
 
 	"strata/requestnorm"
@@ -128,7 +131,7 @@ func checkRequest(req requestnorm.Value) error {
 	}
 	for _, name := range []string{"temperature", "top_p"} {
 		v := field(req, name)
-		if v.Kind() != requestnorm.Null && v.Kind() != requestnorm.Number {
+		if _, ok := responseSamplingValue(v); !ok {
 			return unsupported(name, name+" must be a number or null")
 		}
 	}
@@ -149,6 +152,32 @@ func checkRequest(req requestnorm.Value) error {
 		}
 	}
 	return nil
+}
+
+// responseSamplingValue matches the Python server's numeric-string coercion.
+func responseSamplingValue(v requestnorm.Value) (any, bool) {
+	if v.Kind() == requestnorm.Null || v.Kind() == requestnorm.Number {
+		return valueAny(v), true
+	}
+	if v.Kind() != requestnorm.String {
+		return nil, false
+	}
+	text, _ := v.Text()
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(strings.ToLower(strings.TrimLeft(text, "+-")), "0x") {
+		return nil, false
+	}
+	n, err := strconv.ParseFloat(text, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return nil, false
+	}
+	digits := strings.TrimLeft(text, "+-")
+	if digits != "" && strings.Trim(digits, "0123456789") == "" {
+		if integer, ok := new(big.Int).SetString(text, 10); ok {
+			return json.Number(integer.String()), true
+		}
+	}
+	return n, true
 }
 
 // textFormat mirrors responses.text_format, but rejects extra settings rather

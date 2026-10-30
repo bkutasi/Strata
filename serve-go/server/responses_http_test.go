@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,6 +93,71 @@ func TestResponsesTextAndReasoning(t *testing.T) {
 		response.Usage.Input != 2 || response.Usage.Output != len("thinking</think>answer") ||
 		response.Usage.Details.Reasoning != len("thinking</think>") {
 		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+type samplingCapture struct {
+	mu  sync.Mutex
+	got engine.Sampling
+}
+
+func (*samplingCapture) Alive() bool       { return true }
+func (*samplingCapture) ContextLimit() int { return 4096 }
+func (e *samplingCapture) GenerateWithOptions(_ context.Context, _ []int, _ int, opts engine.RequestOptions) (engine.Result, error) {
+	e.mu.Lock()
+	e.got = opts.Sampling
+	e.mu.Unlock()
+	if err := opts.OnToken('x'); err != nil {
+		return engine.Result{}, err
+	}
+	return engine.Result{Finish: "stop"}, nil
+}
+
+func TestResponsesNumericStringSampling(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	eng := &samplingCapture{}
+	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+		Engine: eng, Renderer: responsesRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
+		MaxOutputTokens: 512, MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"input":"Hi","max_output_tokens":32,"temperature":"0.7","top_p":"0.9"}`
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/responses", body, "secret")
+	var response struct {
+		Temperature float64 `json:"temperature"`
+		TopP        float64 `json:"top_p"`
+	}
+	err = json.Unmarshal([]byte(raw), &response)
+	eng.mu.Lock()
+	defer eng.mu.Unlock()
+	if status != http.StatusOK || err != nil || response.Temperature != 0.7 || response.TopP != 0.9 ||
+		eng.got.Temperature == nil || *eng.got.Temperature != 0.7 || eng.got.TopP == nil || *eng.got.TopP != 0.9 {
+		t.Fatalf("status %d, response %s, error %v", status, raw, err)
+	}
+}
+
+func TestResponsesNumericStringSamplingValidation(t *testing.T) {
+	h := responsesHandler(t, "answer", "stop", false)
+	for _, tc := range []struct {
+		field string
+		want  int
+	}{
+		{`"temperature":" 0.7 "`, http.StatusOK},
+		{`"top_p":"1"`, http.StatusOK},
+		{`"temperature":"not-a-number"`, http.StatusBadRequest},
+		{`"temperature":"NaN"`, http.StatusBadRequest},
+		{`"top_p":"Infinity"`, http.StatusBadRequest},
+		{`"top_p":true`, http.StatusBadRequest},
+		{`"top_p":"0"`, http.StatusBadRequest},
+	} {
+		body := `{"input":"hi",` + tc.field + `}`
+		w := responsesRequest(h, "/v1/responses", body, "secret")
+		if w.Code != tc.want {
+			t.Errorf("%s: status %d, want %d: %s", tc.field, w.Code, tc.want, w.Body.String())
+		}
 	}
 }
 
