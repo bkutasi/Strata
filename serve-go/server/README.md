@@ -12,7 +12,7 @@ As in Python, requests naming another model use the loaded model and report
 its name; model aliases are not supported.
 It also accepts stateless text-only requests at `POST /v1/responses`, with
 named streaming events, reasoning, stop strings and completed function calls. Stored responses,
-images, JSON Schema output, and custom tools are not supported.
+images and custom tools are not supported.
 As in the Python server, `store: true` is accepted but responses are not stored.
 Codex client metadata is accepted; the optional Codex thread-title and
 compaction-cache behaviors are not implemented.
@@ -31,9 +31,14 @@ When Chat supplies both output-token limits, `max_completion_tokens` takes
 precedence unless it is zero or null, as in the Python server.
 Chat, Responses and Anthropic accept `stop` or `stop_sequences`; a non-null
 `stop` takes precedence and is limited to four strings.
-Chat and Responses support JSON-object output, including optional LaTeX escape
-repair. Like the Python server, Chat rejects structured output when tools are
-enabled; Responses applies it to the final answer rather than tool calls.
+Chat and Responses support JSON-object and JSON Schema output, including
+optional LaTeX escape repair. Schema output is prompted and validated, not
+constrained during generation; remote schema references are refused. Unlike
+Python when its optional `jsonschema` package is absent, Go always validates
+the schema. Go's regular expression and schema-draft behavior can differ from
+Python's validator. Like the Python server, Chat rejects structured output
+when tools are enabled; Responses applies it to the final answer rather than
+tool calls.
 
 Build with Go 1.26.10:
 

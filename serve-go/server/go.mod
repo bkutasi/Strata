@@ -3,6 +3,7 @@ module strata/server
 go 1.26
 
 require (
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	strata.local/httpguard v0.0.0
 	strata/engine v0.0.0
 	strata/outputparser v0.0.0
@@ -15,6 +16,7 @@ require (
 
 require (
 	github.com/jryberg/gojinja v1.1.1 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	strata/serve-go/bpe v0.0.0 // indirect
 	strata/tokenizer v0.0.0 // indirect
 	strata/toolparser v0.0.0 // indirect

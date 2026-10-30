@@ -85,9 +85,12 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if prepared.Format.Kind() != requestnorm.Null {
 		kind, _ := prepared.Format.Lookup("type")
 		name, _ := kind.Text()
-		if name != "json_object" {
-			fail(w, 400, "invalid_request_error", "JSON Schema output is not supported")
-			return
+		if name == "json_schema" {
+			o.schema, err = compileOutputSchema(prepared.Format)
+			if err != nil {
+				failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "text.format", Status: 400})
+				return
+			}
 		}
 		o.structured = true
 		repair, _ := prepared.Format.Lookup("repair_latex_escapes")
@@ -110,7 +113,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if o.structured {
-		prepared.Messages = addObjectDirective(prepared.Messages, len(prepared.Tools) > 0)
+		prepared.Messages = addObjectDirective(prepared.Messages, len(prepared.Tools) > 0, o.schema)
 	}
 	input := requestnorm.Result{Messages: prepared.Messages, Tools: prepared.Tools, Kwargs: prepared.Kwargs}
 	rendered, err := s.cfg.Renderer.Render(r.Context(), input)
@@ -162,7 +165,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	var validate func(string, string) (string, error)
 	if o.structured {
 		validate = func(text, finish string) (string, error) {
-			out, validationErr := validateJSONObject(text, finish, o.repair)
+			out, validationErr := validateStructuredJSON(text, finish, o.repair, o.schema)
 			if validationErr != nil {
 				return "", &structuredValidationError{err: validationErr}
 			}

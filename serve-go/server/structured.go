@@ -14,11 +14,14 @@ import (
 const objectDirective = "OUTPUT FORMAT REQUIREMENT: Return exactly one JSON object matching the JSON Schema below. " +
 	"No Markdown, headings, code fences, commentary, or text outside the JSON. " +
 	"Use every required field, correct types, and only allowed fields. " +
-	"Put all requested writing inside the appropriate JSON string fields.\nJSON Schema:\n" +
-	`{"type":"object"}`
+	"Put all requested writing inside the appropriate JSON string fields.\nJSON Schema:\n"
 
-func addObjectDirective(messages []requestnorm.Message, withTools bool) []requestnorm.Message {
-	directive := objectDirective
+func addObjectDirective(messages []requestnorm.Message, withTools bool, schema *outputSchema) []requestnorm.Message {
+	text := `{"type":"object"}`
+	if schema != nil {
+		text = schema.text
+	}
+	directive := objectDirective + text
 	if withTools {
 		directive += "\nThis applies only to your final answer. To use a tool, call it as usual; the JSON object is " +
 			"what you write once you are done with the tools."

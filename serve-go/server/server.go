@@ -154,6 +154,7 @@ type options struct {
 	sampling   engine.Sampling
 	structured bool
 	repair     bool
+	schema     *outputSchema
 }
 
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
@@ -231,13 +232,19 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			if v.Kind() != requestnorm.Null {
 				kind, ok := v.Lookup("type")
 				text, isString := kind.Text()
-				if v.Kind() != requestnorm.Object || !ok || !isString || kind.Kind() != requestnorm.String || (text != "text" && text != "json_object") {
+				if v.Kind() != requestnorm.Object || !ok || !isString || kind.Kind() != requestnorm.String || (text != "text" && text != "json_object" && text != "json_schema") {
 					return requestnorm.Result{}, o, errors.New("structured response_format is not supported")
 				}
-				if text == "json_object" {
+				if text == "json_object" || text == "json_schema" {
 					o.structured = true
 					repair, _ := v.Lookup("repair_latex_escapes")
 					o.repair, _ = repair.Bool()
+				}
+				if text == "json_schema" {
+					o.schema, err = compileOutputSchema(v)
+					if err != nil {
+						return requestnorm.Result{}, o, err
+					}
 				}
 			}
 		case "max_tokens", "max_completion_tokens":
@@ -312,7 +319,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		return result, o, err
 	}
 	if o.structured {
-		result.Messages = addObjectDirective(result.Messages, false)
+		result.Messages = addObjectDirective(result.Messages, false, o.schema)
 	}
 	kind, force := normalizeForceChoice(toolChoice, result.Tools, s.cfg.Family)
 	o.noTools, o.force = kind == "none", force
@@ -529,7 +536,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		finish = "tool_calls"
 	}
 	if opt.structured {
-		validated, validationErr := validateJSONObject(content.String(), finish, opt.repair)
+		validated, validationErr := validateStructuredJSON(content.String(), finish, opt.repair, opt.schema)
 		if validationErr != nil {
 			body, _ := json.Marshal(map[string]any{"error": map[string]string{
 				"type": "structured_output_failed", "code": "structured_output_failed", "message": validationErr.Error(),
