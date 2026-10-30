@@ -69,7 +69,7 @@ func (s *server) decodeAnthropicCount(data []byte) (requestnorm.AnthropicResult,
 			if (!ok || canonical.Kind() == requestnorm.Null) && countSampling(field.Name, field.Value, false) != nil {
 				return requestnorm.AnthropicResult{}, fmt.Errorf("invalid sampling field %q", field.Name)
 			}
-		case "model", "max_tokens", "stream", "stop", "stop_sequences", "tool_choice", "repeat_last_n", "metadata", "service_tier":
+		case "model", "max_tokens", "stream", "stop", "stop_sequences", "tool_choice", "repeat_last_n", "metadata", "service_tier", "thinking_budget_tokens":
 			// These fields do not change the prompt counted by the Python endpoint.
 		default:
 			return requestnorm.AnthropicResult{}, fmt.Errorf("unsupported request field %q", field.Name)

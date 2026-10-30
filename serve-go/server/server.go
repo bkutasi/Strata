@@ -155,6 +155,7 @@ type options struct {
 	structured bool
 	repair     bool
 	schema     *outputSchema
+	budget     bool
 }
 
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
@@ -167,6 +168,11 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	}
 	promptFields := map[string]json.RawMessage{}
 	o := options{max: s.cfg.MaxOutputTokens}
+	budget, _ := root.Lookup("reasoning_budget_tokens")
+	o.budget, err = reasoningBudget(root, budget)
+	if err != nil {
+		return requestnorm.Result{}, o, err
+	}
 	o.stops, err = parseStops(root)
 	if err != nil {
 		return requestnorm.Result{}, o, err
@@ -248,6 +254,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 				}
 			}
 		case "max_tokens", "max_completion_tokens":
+		case "reasoning_budget_tokens", "thinking_budget_tokens":
 		case "stop", "stop_sequences":
 		case "temperature", "top_p", "min_p", "repetition_penalty", "frequency_penalty", "presence_penalty",
 			"penalty_last_n", "seed", "repeat_penalty", "repeat_last_n":
@@ -361,6 +368,10 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	rendered, err := s.cfg.Renderer.Render(r.Context(), input)
 	if err != nil {
 		fail(w, 502, "server_error", "renderer failed")
+		return
+	}
+	if err = rejectActiveReasoningBudget(opt.budget, rendered.Thinking); err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
 	if len(rendered.Prompt) > s.cfg.MaxPromptBytes {

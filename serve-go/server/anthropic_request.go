@@ -21,6 +21,7 @@ type anthropicOptions struct {
 	max      int
 	stops    []string
 	sampling engine.Sampling
+	budget   bool
 }
 
 // decodeAnthropicRequest strictly decodes a supported Messages generation
@@ -71,12 +72,7 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 		case "stop", "stop_sequences":
 		case "tool_choice":
 			toolChoice = v
-		case "reasoning_budget_tokens":
-			// The prompt normalizer accepts this for count parity, but generation
-			// does not yet apply the budget.
-			if v.Kind() != requestnorm.Null {
-				return requestnorm.AnthropicResult{}, o, errors.New("reasoning budget is not supported")
-			}
+		case "reasoning_budget_tokens", "thinking_budget_tokens":
 		case "temperature", "top_p", "min_p", "repetition_penalty", "frequency_penalty", "presence_penalty",
 			"penalty_last_n", "seed", "repeat_penalty", "repeat_last_n":
 			if err := setSampling(&o.sampling, root, f.Name, v); err != nil {
@@ -130,8 +126,9 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 	if err != nil {
 		return result, o, err
 	}
-	if result.ReasoningBudgetTokens.Kind() != requestnorm.Null {
-		return requestnorm.AnthropicResult{}, o, errors.New("reasoning budget is not supported")
+	o.budget, err = reasoningBudget(root, result.ReasoningBudgetTokens)
+	if err != nil {
+		return requestnorm.AnthropicResult{}, o, err
 	}
 	if err = requestnorm.RequireAnthropicMessages(result.Messages); err != nil {
 		return result, o, err

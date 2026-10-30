@@ -59,6 +59,12 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	o := options{max: s.cfg.MaxOutputTokens}
+	budget, _ := root.Lookup("reasoning_budget_tokens")
+	o.budget, err = reasoningBudget(root, budget)
+	if err != nil {
+		failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "reasoning_budget_tokens", Status: 400})
+		return
+	}
 	for _, f := range root.Fields() {
 		v := f.Value
 		switch f.Name {
@@ -119,6 +125,10 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	rendered, err := s.cfg.Renderer.Render(r.Context(), input)
 	if err != nil {
 		fail(w, 502, "server_error", "renderer failed")
+		return
+	}
+	if err = rejectActiveReasoningBudget(o.budget, rendered.Thinking); err != nil {
+		failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "reasoning_budget_tokens", Status: 400})
 		return
 	}
 	if len(rendered.Prompt) > s.cfg.MaxPromptBytes {
