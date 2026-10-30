@@ -86,7 +86,7 @@ func (s *server) decodeAnthropicCount(data []byte) (requestnorm.AnthropicResult,
 	if err != nil {
 		return requestnorm.AnthropicResult{}, err
 	}
-	result, err := s.normalizer.NormalizeAnthropic(req, true)
+	result, err := s.normalizer.NormalizeAnthropic(req, !s.cfg.AnthropicThinkingOnRequest)
 	if err != nil {
 		return result, err
 	}

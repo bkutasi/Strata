@@ -18,19 +18,20 @@ import (
 // standaloneConfig supports the fields in the standalone Strata run config.
 // Unknown settings are rejected rather than silently ignored.
 type standaloneConfig struct {
-	Exe             string            `json:"exe"`
-	Cwd             string            `json:"cwd"`
-	Args            []string          `json:"args"`
-	Tokenizer       string            `json:"tokenizer"`
-	Model           string            `json:"model_name"`
-	Host            string            `json:"host"`
-	APIKey          string            `json:"api_key"`
-	GPU             *int              `json:"gpu"`
-	Env             map[string]string `json:"env"`
-	Log             string            `json:"log"`
-	AnswerRoom      json.RawMessage   `json:"answer_room"`
-	ReasoningBudget json.RawMessage   `json:"reasoning_budget_tokens"`
-	RepeatStop      json.RawMessage   `json:"repeat_stop_tokens,omitempty"`
+	Exe               string            `json:"exe"`
+	Cwd               string            `json:"cwd"`
+	Args              []string          `json:"args"`
+	Tokenizer         string            `json:"tokenizer"`
+	Model             string            `json:"model_name"`
+	Host              string            `json:"host"`
+	APIKey            string            `json:"api_key"`
+	GPU               *int              `json:"gpu"`
+	Env               map[string]string `json:"env"`
+	Log               string            `json:"log"`
+	AnswerRoom        json.RawMessage   `json:"answer_room"`
+	ReasoningBudget   json.RawMessage   `json:"reasoning_budget_tokens"`
+	RepeatStop        json.RawMessage   `json:"repeat_stop_tokens,omitempty"`
+	AnthropicThinking string            `json:"anthropic_thinking,omitempty"`
 }
 
 func (c standaloneConfig) repeatStopConfig() (*int, error) {
@@ -113,6 +114,9 @@ func readStandaloneConfig(path string) (standaloneConfig, error) {
 	}
 	if _, err := cfg.repeatStopConfig(); err != nil {
 		return cfg, fmt.Errorf("invalid config: %w", err)
+	}
+	if cfg.AnthropicThinking != "" && cfg.AnthropicThinking != "model" && cfg.AnthropicThinking != "on_request" {
+		return cfg, errors.New(`invalid config: anthropic_thinking must be "model" or "on_request"`)
 	}
 	if !filepath.IsAbs(cfg.Exe) {
 		cfg.Exe, err = filepath.Abs(filepath.Join(cfg.Cwd, cfg.Exe))

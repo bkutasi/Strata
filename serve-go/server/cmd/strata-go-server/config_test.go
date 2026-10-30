@@ -108,3 +108,27 @@ func TestStandaloneRepeatStopConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestStandaloneAnthropicThinkingConfig(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		ok    bool
+	}{
+		{``, true},
+		{`,"anthropic_thinking":"model"`, true},
+		{`,"anthropic_thinking":"on_request"`, true},
+		{`,"anthropic_thinking":null`, true},
+		{`,"anthropic_thinking":"unknown"`, false},
+		{`,"anthropic_thinking":true`, false},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		data := `{"exe":"e","tokenizer":"t","model_name":"m"` + tc.field + `}`
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := readStandaloneConfig(path)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: error %v, want ok=%v", tc.field, err, tc.ok)
+		}
+	}
+}

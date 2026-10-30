@@ -25,19 +25,20 @@ import (
 )
 
 type Config struct {
-	Model                  string
-	Family                 requestnorm.Family
-	Tokenizer              *modeltokenizer.Tokenizer
-	Engine                 Engine
-	Renderer               Renderer
-	APIKeys                []string
-	MaxBody                int64
-	MaxPromptBytes         int
-	MaxOutputTokens        int
-	MaxConcurrent          int
-	DefaultReasoningBudget *int
-	DisableAnswerRoom      bool
-	RepeatStopTokens       *int
+	Model                      string
+	Family                     requestnorm.Family
+	Tokenizer                  *modeltokenizer.Tokenizer
+	Engine                     Engine
+	Renderer                   Renderer
+	APIKeys                    []string
+	MaxBody                    int64
+	MaxPromptBytes             int
+	MaxOutputTokens            int
+	MaxConcurrent              int
+	DefaultReasoningBudget     *int
+	DisableAnswerRoom          bool
+	RepeatStopTokens           *int
+	AnthropicThinkingOnRequest bool
 }
 
 // Engine is the native generation service used by the handler.

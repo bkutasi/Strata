@@ -27,6 +27,8 @@ limit. As in Python, automatic answer-room limits can still apply. The run
 config supports `reasoning_budget_tokens` and `answer_room: false`. A reply
 that repeats one token 256 times is stopped as length; set
 `repeat_stop_tokens` to 0 to turn this off.
+Set `anthropic_thinking` to `on_request` to turn thinking off for Anthropic
+requests that do not ask for it; the default is `model`.
 As in the
 Python Responses route, Responses `tool_choice: none` removes tools; other
 choices are accepted but do not force a tool. Incomplete tool calls are not
@@ -74,7 +76,7 @@ For compatibility with the Python command, `--engine strata` can also be
 given with `--config`; the executable still comes from the config.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
 integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens`,
-`answer_room` and `repeat_stop_tokens`. Other config fields are rejected
+`answer_room`, `repeat_stop_tokens` and `anthropic_thinking`. Other config fields are rejected
 rather than silently ignored. `--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.

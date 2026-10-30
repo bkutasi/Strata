@@ -12,6 +12,42 @@ func anthropicDecoderServer() *server {
 	return &server{cfg: Config{Model: "model", MaxOutputTokens: 128}, normalizer: n}
 }
 
+func TestAnthropicThinkingOnRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+		onRequest    bool
+		wantDisabled bool
+	}{
+		{"default", "", false, false},
+		{"on request", "", true, true},
+		{"zero budget", `,"reasoning_budget_tokens":0`, true, true},
+		{"positive budget", `,"reasoning_budget_tokens":5`, true, false},
+		{"enabled", `,"thinking":{"type":"enabled","budget_tokens":5}`, true, false},
+		{"disabled", `,"thinking":{"type":"disabled"}`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := anthropicDecoderServer()
+			s.cfg.AnthropicThinkingOnRequest = tc.onRequest
+			body := []byte(`{"messages":[{"role":"user","content":"hi"}]` + tc.fields + `}`)
+			count, err := s.decodeAnthropicCount(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			generation, _, err := s.decodeAnthropicRequest(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, kwargs := range map[string]requestnorm.Value{"count": count.Kwargs, "generation": generation.Kwargs} {
+				value, _ := kwargs.Lookup("enable_thinking")
+				enabled, isBool := value.Bool()
+				if (isBool && !enabled) != tc.wantDisabled {
+					t.Errorf("%s: kwargs %v, want disabled=%v", name, kwargs, tc.wantDisabled)
+				}
+			}
+		})
+	}
+}
+
 func TestDecodeAnthropicRequest(t *testing.T) {
 	s := anthropicDecoderServer()
 	tests := []struct {
