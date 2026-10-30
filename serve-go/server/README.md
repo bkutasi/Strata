@@ -51,6 +51,8 @@ conversation checkpoint, as in Python; cached prefixes can still be reused.
 in `sampling` defaults. It affects engines started with a control vector.
 Chat accepts `logprobs`, `top_logprobs` and `allowed_token_ids`. An older
 engine that does not send probabilities returns the answer without them.
+As in Python, Chat accepts but ignores `n` and `parallel_tool_calls`; it
+returns one choice and does not enforce that tool-call flag.
 When Chat supplies both output-token limits, `max_completion_tokens` takes
 precedence unless it is zero or null, as in the Python server.
 Chat, Responses and Anthropic accept `stop` or `stop_sequences`; a non-null

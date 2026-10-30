@@ -296,7 +296,7 @@ func TestHTTPIntegration(t *testing.T) {
 	if status != 401 {
 		t.Fatalf("unauthorized status %d", status)
 	}
-	status, _ = request(t, ts.Client(), url, `{"messages":[{"role":"user","content":"Hi"}],"n":2}`, "secret")
+	status, _ = request(t, ts.Client(), url, `{"messages":[{"role":"user","content":"Hi"}],"unknown_field":2}`, "secret")
 	if status != 400 {
 		t.Fatalf("unsupported field status %d", status)
 	}
@@ -315,6 +315,42 @@ func TestHTTPIntegration(t *testing.T) {
 	status, bodyOut = request(t, ts.Client(), url, body, "secret")
 	if status != 200 || !strings.Contains(bodyOut, `"content":"hello STOPhidden"`) {
 		t.Fatalf("request after stop %d %s", status, bodyOut)
+	}
+}
+
+func TestChatChoiceCountAndParallelToolFlags(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	for _, stream := range []string{"false", "true"} {
+		for _, fields := range []string{`"n":1`, `"n":2`, `"parallel_tool_calls":false`, `"parallel_tool_calls":true`} {
+			body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,"stream":` + stream + `,` + fields + `}`
+			status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+			if status != http.StatusOK {
+				t.Fatalf("stream=%s %s status=%d body=%s", stream, fields, status, raw)
+			}
+			chunks := 0
+			for _, line := range strings.Split(raw, "\n") {
+				if stream == "true" {
+					if !strings.HasPrefix(line, "data: {") {
+						continue
+					}
+					line = strings.TrimPrefix(line, "data: ")
+				} else if line == "" {
+					continue
+				}
+				var result struct {
+					Choices []json.RawMessage `json:"choices"`
+				}
+				if err := json.Unmarshal([]byte(line), &result); err != nil || len(result.Choices) != 1 {
+					t.Fatalf("stream=%s %s choices=%d error=%v body=%s", stream, fields, len(result.Choices), err, line)
+				}
+				chunks++
+			}
+			if chunks == 0 {
+				t.Fatalf("stream=%s %s: no choices in %s", stream, fields, raw)
+			}
+		}
 	}
 }
 

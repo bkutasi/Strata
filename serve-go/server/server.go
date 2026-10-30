@@ -293,8 +293,8 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			o.stream = b
 		case "stream_options":
 			// Python ignores this field and always includes usage in the final chunk.
-		case "user", "metadata", "service_tier", "safety_identifier", "prompt_cache_key":
-			// Python accepts these client metadata fields without changing generation.
+		case "user", "metadata", "service_tier", "safety_identifier", "prompt_cache_key", "n", "parallel_tool_calls":
+			// Python accepts these fields without changing generation.
 		case "response_format":
 			if v.Kind() != requestnorm.Null {
 				kind, ok := v.Lookup("type")
