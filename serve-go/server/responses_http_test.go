@@ -77,8 +77,11 @@ func TestResponsesTextAndReasoning(t *testing.T) {
 			} `json:"content"`
 		} `json:"output"`
 		Usage struct {
-			Input  int `json:"input_tokens"`
-			Output int `json:"output_tokens"`
+			Input   int `json:"input_tokens"`
+			Output  int `json:"output_tokens"`
+			Details struct {
+				Reasoning int `json:"reasoning_tokens"`
+			} `json:"output_tokens_details"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
@@ -86,8 +89,52 @@ func TestResponsesTextAndReasoning(t *testing.T) {
 	}
 	if response.Status != "completed" || len(response.Output) != 2 || response.Output[0].Type != "reasoning" ||
 		response.Output[0].Content[0].Text != "thinking" || response.Output[1].Content[0].Text != "answer" ||
-		response.Usage.Input != 2 || response.Usage.Output != len("thinking</think>answer") {
+		response.Usage.Input != 2 || response.Usage.Output != len("thinking</think>answer") ||
+		response.Usage.Details.Reasoning != len("thinking</think>") {
 		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+func TestResponsesReasoningTokenUsageStream(t *testing.T) {
+	for _, tc := range []struct {
+		thinking bool
+		text     string
+		want     int
+	}{
+		{true, "abc</think>answer", len("abc</think>")},
+		{false, "answer", 0},
+		{true, "unfinished", len("unfinished")},
+	} {
+		h := responsesHandler(t, tc.text, "stop", tc.thinking)
+		w := responsesRequest(h, "/v1/responses", `{"input":"hello","stream":true}`, "secret")
+		found := false
+		for _, line := range strings.Split(w.Body.String(), "\n") {
+			if !strings.HasPrefix(line, "data: {") {
+				continue
+			}
+			var event struct {
+				Type     string `json:"type"`
+				Response struct {
+					Usage struct {
+						Details struct {
+							Reasoning int `json:"reasoning_tokens"`
+						} `json:"output_tokens_details"`
+					} `json:"usage"`
+				} `json:"response"`
+			}
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+				t.Fatal(err)
+			}
+			if event.Type == "response.completed" {
+				found = true
+				if event.Response.Usage.Details.Reasoning != tc.want {
+					t.Errorf("%q: reasoning tokens %d, want %d", tc.text, event.Response.Usage.Details.Reasoning, tc.want)
+				}
+			}
+		}
+		if w.Code != http.StatusOK || !found {
+			t.Errorf("%q: status %d: %s", tc.text, w.Code, w.Body.String())
+		}
 	}
 }
 

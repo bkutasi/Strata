@@ -19,11 +19,12 @@ type generationParser interface {
 }
 
 type generationResult struct {
-	result  engine.Result
-	count   int
-	stopped bool
-	cached  int
-	timings map[string]any
+	result    engine.Result
+	count     int
+	reasoning int
+	stopped   bool
+	cached    int
+	timings   map[string]any
 }
 
 // DONE extras contain drafts accepted/offered, reused tokens, and optionally
@@ -101,6 +102,12 @@ func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.
 				}
 				stoppedToken = true
 				return engine.ErrStopGeneration
+			}
+			if hasStatus {
+				state := status.Status().State
+				if state == "reasoning" || state == "rcall" {
+					out.reasoning++
+				}
 			}
 			if budget > 0 || force != "" {
 				segment = append(segment, id)
@@ -190,6 +197,12 @@ func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.
 		}
 		for _, id := range extra {
 			out.count++
+			if hasStatus {
+				state := status.Status().State
+				if state == "reasoning" || state == "rcall" {
+					out.reasoning++
+				}
+			}
 			raw, err := tokenizer.TokenBytes(id)
 			if err != nil {
 				return out, err

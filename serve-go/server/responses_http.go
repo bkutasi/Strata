@@ -302,7 +302,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if result.stopped || finish == "cancel" {
 		finish = "stop"
 	}
-	events, err = a.Finish(responses.Done{Finish: finish, CompletionTokens: int64(result.count), Reused: int64(result.cached), Timings: result.timings})
+	events, err = a.Finish(responses.Done{Finish: finish, CompletionTokens: int64(result.count), ReasoningTokens: int64(result.reasoning), Reused: int64(result.cached), Timings: result.timings})
 	if err == nil {
 		err = send(events)
 	}

@@ -180,13 +180,53 @@ func TestReasoningBudgetStopsAndContinues(t *testing.T) {
 		return nil
 	})
 	extra, encodeErr := tok.Encode(reasoningWrapUp, true, nil)
+	reasoningExtra := 0
+	var decoded strings.Builder
+	for _, id := range extra {
+		piece, err := tok.TokenBytes(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded.Write(piece)
+		reasoningExtra++
+		if strings.Contains(decoded.String(), "</think>") {
+			break
+		}
+	}
 	wantPrompt := append(append(slices.Clone(prompt), 'a', 'b', 'c'), extra...)
 	if err != nil || encodeErr != nil || len(e.prompts) != 2 || !slices.Equal(e.prompts[1], wantPrompt) ||
 		e.limits[1] != 200-3-len(extra) || content.String() != "done" ||
 		reasoning.String() != "abc"+strings.Split(reasoningWrapUp, "</think>")[0] ||
-		out.count != 3+len(extra)+4 || out.result.Finish != "stop" {
+		out.count != 3+len(extra)+4 || out.reasoning != 3+reasoningExtra || out.result.Finish != "stop" {
 		t.Fatalf("out=%+v prompts=%v limits=%v reasoning=%q content=%q err=%v encode=%v",
 			out, e.prompts, e.limits, reasoning.String(), content.String(), err, encodeErr)
+	}
+}
+
+func TestReasoningTokenCountExcludesStopAndIncludesReasoningCall(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	for _, tc := range []struct {
+		text  string
+		stop  bool
+		count int
+	}{
+		{"abc", true, 3},
+		{"<tool_call><function=lookup>", true, len("<tool_call><function=lookup>")},
+	} {
+		parser, err := outputparser.New(outputparser.Options{Thinking: true, Tools: []map[string]any{{"name": "lookup"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokens := bytesAsTokens(tc.text)
+		if tc.stop {
+			tokens = append(tokens, 257)
+		}
+		e := &budgetEngine{segments: [][]int{tokens}}
+		out, err := generate(context.Background(), e, tok, parser, []int{'H'}, 200, engine.Sampling{},
+			map[int]bool{257: true}, 0, func([]outputparser.Event) error { return nil })
+		if err != nil || out.reasoning != tc.count || out.count != tc.count+1 {
+			t.Errorf("%q: out=%+v err=%v", tc.text, out, err)
+		}
 	}
 }
 
