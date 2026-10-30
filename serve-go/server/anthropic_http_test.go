@@ -57,6 +57,19 @@ func TestAnthropicMessagesHTTP(t *testing.T) {
 	}
 }
 
+func TestAnthropicClientMetadata(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,"thinking":{"type":"disabled"},"metadata":{"user_id":"client"},"service_tier":"auto"}`
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens"} {
+		status, raw := request(t, ts.Client(), ts.URL+path, body, "secret")
+		if status != http.StatusOK {
+			t.Errorf("%s: status %d: %s", path, status, raw)
+		}
+	}
+}
+
 func TestAnthropicDeepSeekReasoningFallbackHTTP(t *testing.T) {
 	h, _ := setupFamilyEngine(t, "engine-deep-reason", requestnorm.FamilyDeepSeek)
 	ts := httptest.NewServer(h)

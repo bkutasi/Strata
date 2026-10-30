@@ -40,6 +40,8 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 		v := f.Value
 		switch f.Name {
 		case "system", "messages", "tools", "thinking", "output_config":
+		case "metadata", "service_tier":
+			// Python accepts these client metadata fields without changing generation.
 		case "model":
 			m, ok := v.Text()
 			if !ok || v.Kind() != requestnorm.String || m != s.cfg.Model {
