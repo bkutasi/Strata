@@ -45,6 +45,8 @@ Chat, Responses and Anthropic requests also accept `logit_bias` as an object
 or a list of token-ID and bias pairs. It requires a native engine that
 advertises bias support and is not using continuous batching; unsupported
 engines reject the request.
+Chat accepts inactive `logprobs` options, but requests for token log
+probabilities are rejected; generated-token logprobs are not implemented.
 When Chat supplies both output-token limits, `max_completion_tokens` takes
 precedence unless it is zero or null, as in the Python server.
 Chat, Responses and Anthropic accept `stop` or `stop_sequences`; a non-null

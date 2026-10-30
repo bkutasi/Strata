@@ -310,6 +310,14 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "max_tokens", "max_completion_tokens":
 		case "reasoning_budget_tokens", "thinking_budget_tokens":
 		case "stop", "stop_sequences":
+		case "logprobs":
+			enabled, isBool := v.Bool()
+			integer, isInt := v.Integer()
+			if (isBool && enabled) || (isInt && !strings.HasPrefix(integer, "-")) {
+				return requestnorm.Result{}, o, errors.New("logprobs are not supported")
+			}
+		case "top_logprobs", "allowed_token_ids":
+			// Python ignores these unless logprobs are requested.
 		case "logit_bias":
 			o.sampling.LogitBias, err = s.requestLogitBias(v)
 			if err != nil {

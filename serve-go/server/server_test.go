@@ -224,6 +224,31 @@ func TestHTTPSamplingFields(t *testing.T) {
 	}
 }
 
+func TestChatInactiveLogprobs(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	url := ts.URL + "/v1/chat/completions"
+	for _, fields := range []string{
+		`"logprobs":false,"top_logprobs":9,"allowed_token_ids":[1]`,
+		`"logprobs":null`, `"logprobs":-1`, `"logprobs":0.0`, `"logprobs":"true"`,
+		`"top_logprobs":3,"allowed_token_ids":[1]`,
+	} {
+		body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,` + fields + `}`
+		status, raw := request(t, ts.Client(), url, body, "secret")
+		if status != http.StatusOK {
+			t.Fatalf("%s: status %d, body %s", fields, status, raw)
+		}
+	}
+	for _, value := range []string{"true", "0", "-0", "5", "123456789012345678901234567890"} {
+		body := `{"messages":[{"role":"user","content":"Hi"}],"logprobs":` + value + `}`
+		status, raw := request(t, ts.Client(), url, body, "secret")
+		if status != http.StatusBadRequest || !strings.Contains(raw, "logprobs") {
+			t.Fatalf("%s: status %d, body %s", value, status, raw)
+		}
+	}
+}
+
 func TestHTTPIntegration(t *testing.T) {
 	h, _ := setup(t)
 	ts := httptest.NewServer(h)
