@@ -49,6 +49,9 @@ func run() error {
 	configPath := flag.String("config", "", "standalone Strata JSON config")
 	port := flag.Int("port", 8080, "API port when using --config")
 	apiKey := flag.String("api-key", "", "API key (prefer --api-key-env)")
+	noResponses := flag.Bool("no-responses", false, "disable the /v1/responses endpoint")
+	noAnthropic := flag.Bool("no-anthropic", false, "disable Anthropic Messages and count_tokens endpoints")
+	lazyVision := flag.Bool("lazy-vision", false, "start the vision reader only for image requests and stop it afterwards")
 	flag.Var(&engineArgs, "engine-arg", "native engine argument (repeat; include --serve and model flags)")
 	flag.Parse()
 	var processConfig engine.ProcessConfig
@@ -220,13 +223,21 @@ func run() error {
 	if ctx.Err() != nil {
 		return nil
 	}
-	var visionReader *vision.Reader
+	var visionReader interface {
+		Encode(context.Context, []byte) (string, int, error)
+		Close() error
+	}
 	if standaloneVision != nil {
-		visionCtx, visionCancel := context.WithTimeout(ctx, 300*time.Second)
-		visionReader, err = vision.StartWithEnv(visionCtx, visionArgs[0], visionArgs[1:], processConfig.Env)
-		visionCancel()
-		if err != nil {
-			return err
+		if *lazyVision {
+			visionReader = vision.NewLazy(visionArgs[0], visionArgs[1:], processConfig.Env)
+		} else {
+			visionCtx, visionCancel := context.WithTimeout(ctx, 300*time.Second)
+			reader, startErr := vision.StartWithEnv(visionCtx, visionArgs[0], visionArgs[1:], processConfig.Env)
+			visionCancel()
+			if startErr != nil {
+				return startErr
+			}
+			visionReader = reader
 		}
 		defer func() {
 			if err := visionReader.Close(); err != nil {
@@ -258,7 +269,7 @@ func run() error {
 	if visionReader != nil {
 		maxBody = 48 << 20
 	}
-	serverConfig := server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: maxBody, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort}
+	serverConfig := server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: maxBody, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, DisableResponses: *noResponses, DisableAnthropic: *noAnthropic, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort}
 	if visionReader != nil {
 		serverConfig.Vision = visionReader
 	}

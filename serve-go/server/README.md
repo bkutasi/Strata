@@ -20,6 +20,9 @@ logged; the server does not run them. Stored responses are not supported.
 As in the Python server, `store: true` is accepted but responses are not stored.
 Codex client metadata is accepted; the optional Codex thread-title and
 compaction-cache behaviors are not implemented.
+The standalone server accepts `--no-responses` and `--no-anthropic` to make
+those API routes return 404. These options do not unload statically linked Go
+code and do not guarantee lower process RSS.
 Non-finite generated tool arguments fail the response. Tool
 argument object keys may be reordered by the parser.
 The APIs support `auto` and `none` tool choices. Chat and Anthropic requests
@@ -103,6 +106,11 @@ server starts the reader before the engine and adds `--vision` to the engine
 arguments. Chat, Anthropic and Responses accept image inputs as data URLs,
 HTTP(S) URLs, or local files; foreign-origin web pages cannot read local
 files. The reader and engine take turns, including for text-only requests.
+With `--lazy-vision`, the server starts the reader for each image and stops it
+afterward instead of keeping it in memory. Each image pays the reader's startup
+cost. A GPU reader then needs enough VRAM free after the engine starts; it can
+fail if the engine has taken that space. This option has not been tested with
+a real vision model.
 The server limits image data to 32 MiB per image and the request body to
 48 MiB when vision is enabled. The native reader handles image decoding;
 unlike Python with Pillow, this server does not convert other formats or apply

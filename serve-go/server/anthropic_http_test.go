@@ -70,6 +70,26 @@ func TestAnthropicClientMetadata(t *testing.T) {
 	}
 }
 
+func TestDisabledOptionalRoutes(t *testing.T) {
+	h, _ := setupFamilyEngineWithRouteOptions(t, "engine", requestnorm.FamilyQwen, nil, true, true)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	for _, path := range []string{"/v1/responses", "/v1/messages", "/v1/v1/messages", "/v1/messages/count_tokens", "/v1/v1/messages/count_tokens"} {
+		status, _ := request(t, ts.Client(), ts.URL+path, `not json`, "secret")
+		if status != http.StatusNotFound {
+			t.Errorf("%s status %d, want 404", path, status)
+		}
+	}
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/messages", `not json`, "")
+	if status != http.StatusUnauthorized {
+		t.Errorf("unauthenticated disabled route status %d, body %s; want 401", status, raw)
+	}
+	status, _ = request(t, ts.Client(), ts.URL+"/v1/chat/completions", `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32}`, "secret")
+	if status != http.StatusOK {
+		t.Errorf("Chat status %d, want 200", status)
+	}
+}
+
 func TestAnthropicDeepSeekReasoningFallbackHTTP(t *testing.T) {
 	h, _ := setupFamilyEngine(t, "engine-deep-reason", requestnorm.FamilyDeepSeek)
 	ts := httptest.NewServer(h)

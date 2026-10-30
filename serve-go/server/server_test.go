@@ -135,6 +135,10 @@ func setupFamilyEngine(t *testing.T, mode string, family requestnorm.Family) (ht
 }
 
 func setupFamilyEngineWithAliases(t *testing.T, mode string, family requestnorm.Family, aliases []string) (http.Handler, *engine.Engine) {
+	return setupFamilyEngineWithRouteOptions(t, mode, family, aliases, false, false)
+}
+
+func setupFamilyEngineWithRouteOptions(t *testing.T, mode string, family requestnorm.Family, aliases []string, disableResponses, disableAnthropic bool) (http.Handler, *engine.Engine) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -167,7 +171,7 @@ func setupFamilyEngineWithAliases(t *testing.T, mode string, family requestnorm.
 		})
 		servingEngine = supervisor
 	}
-	h, err := New(Config{Model: "test", Aliases: aliases, Family: family, Tokenizer: tok, Engine: servingEngine, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 200, MaxConcurrent: 2})
+	h, err := New(Config{Model: "test", Aliases: aliases, Family: family, Tokenizer: tok, Engine: servingEngine, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 200, MaxConcurrent: 2, DisableResponses: disableResponses, DisableAnthropic: disableAnthropic})
 	if err != nil {
 		t.Fatal(err)
 	}

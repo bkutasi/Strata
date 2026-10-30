@@ -42,6 +42,8 @@ type Config struct {
 	DefaultReasoningBudget     *int
 	DisableAnswerRoom          bool
 	DisableFitMaxTokens        bool
+	DisableResponses           bool
+	DisableAnthropic           bool
 	RepeatStopTokens           *int
 	AnthropicThinkingOnRequest bool
 	DefaultSampling            engine.Sampling
@@ -163,6 +165,10 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 	countTokens := r.URL.Path == "/v1/messages/count_tokens" || r.URL.Path == "/v1/v1/messages/count_tokens"
 	messages := r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/v1/messages"
 	responses := r.URL.Path == "/v1/responses"
+	if (responses && s.cfg.DisableResponses) || ((messages || countTokens) && s.cfg.DisableAnthropic) {
+		http.NotFound(w, r)
+		return
+	}
 	if r.URL.Path != "/v1/chat/completions" && !countTokens && !messages && !responses {
 		fail(w, http.StatusNotImplemented, "unsupported_endpoint", "endpoint is not implemented")
 		return
