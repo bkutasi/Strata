@@ -9,6 +9,8 @@ can also be counted at `POST /v1/messages/count_tokens`; this does not run the
 engine's generation. It accepts only the supported request fields, rejects
 images, and uses the same renderer limits described below. Anthropic message
 generation, other endpoints, and other model families are not implemented.
+Chat sampling supports temperature, top-p, top-k, min-p, repetition,
+frequency and presence penalties, penalty window, and seed.
 
 Build with Go 1.26.10:
 

@@ -213,22 +213,10 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 					return requestnorm.Result{}, o, errors.New("invalid stop string")
 				}
 			}
-		case "temperature", "top_p":
-			b, _ := v.MarshalJSON()
-			var f float64
-			if v.Kind() != requestnorm.Number || json.Unmarshal(b, &f) != nil || math.IsNaN(f) || math.IsInf(f, 0) {
-				return requestnorm.Result{}, o, errors.New("invalid sampling value")
-			}
-			if field.Name == "temperature" {
-				if f < 0 || f > 2 {
-					return requestnorm.Result{}, o, errors.New("temperature must be between 0 and 2")
-				}
-				o.sampling.Temperature = &f
-			} else {
-				if f <= 0 || f > 1 {
-					return requestnorm.Result{}, o, errors.New("top_p must be greater than 0 and at most 1")
-				}
-				o.sampling.TopP = &f
+		case "temperature", "top_p", "min_p", "repetition_penalty", "frequency_penalty", "presence_penalty",
+			"penalty_last_n", "seed", "repeat_penalty", "repeat_last_n":
+			if err := setSampling(&o.sampling, root, field.Name, v); err != nil {
+				return requestnorm.Result{}, o, err
 			}
 		case "top_k":
 			if v.Kind() == requestnorm.Null {

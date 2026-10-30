@@ -26,7 +26,7 @@ func TestHelperProcess(t *testing.T) {
 	}
 	switch os.Args[3] {
 	case "engine", "engine-tool", "engine-cancel", "engine-deep-tool", "engine-deep-reason",
-		"engine-topk-20", "engine-topk-64", "engine-topk-default":
+		"engine-topk-20", "engine-topk-64", "engine-topk-default", "engine-sampling":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -45,6 +45,7 @@ func TestHelperProcess(t *testing.T) {
 					"engine-topk-20":      "GEN 32 top_k=20 72,105",
 					"engine-topk-64":      "GEN 32 top_k=64 72,105",
 					"engine-topk-default": "GEN 32 72,105",
+					"engine-sampling":     "GEN 32 temperature=0.7 top_p=0.9 top_k=20 min_p=0.1 penalty_repeat=1.1 penalty_freq=-0.5 penalty_present=0.2 penalty_last_n=16 seed=123 72,105",
 				}
 				if want, ok := expected[os.Args[3]]; ok && scanner.Text() != want {
 					fmt.Println("ERR unexpected top_k")
@@ -188,6 +189,30 @@ func request(t *testing.T, client *http.Client, url, body, key string) (int, str
 		t.Fatal(err)
 	}
 	return resp.StatusCode, string(b)
+}
+
+func TestHTTPSamplingFields(t *testing.T) {
+	h, _ := setupEngine(t, "engine-sampling")
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,` +
+		`"chat_template_kwargs":{"enable_thinking":false},"temperature":"0.7","top_p":"0.9","top_k":"20",` +
+		`"min_p":0.1,"repeat_penalty":1.1,"frequency_penalty":-0.5,"presence_penalty":0.2,` +
+		`"repeat_last_n":16,"seed":123}`
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %s", status, raw)
+	}
+	for _, field := range []string{
+		`"temperature":true`, `"top_p":"hot"`, `"min_p":[]`, `"frequency_penalty":true`,
+		`"presence_penalty":"0x1p0"`, `"repetition_penalty":-1`, `"penalty_last_n":1.5`, `"seed":true`,
+	} {
+		body := `{"messages":[{"role":"user","content":"Hi"}],` + field + `}`
+		status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+		if status != http.StatusBadRequest {
+			t.Fatalf("field %s: status %d, body %s", field, status, raw)
+		}
+	}
 }
 
 func TestHTTPIntegration(t *testing.T) {
