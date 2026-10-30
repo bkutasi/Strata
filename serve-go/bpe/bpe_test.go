@@ -160,6 +160,26 @@ func TestPackedVocabularyOwnershipAndBytes(t *testing.T) {
 	wg.Wait()
 }
 
+func TestWideVocabularyOffsets(t *testing.T) {
+	tok, err := New([]string{"", "a", "<special>"}, nil, []int{0, 0, 4}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise the large-vocabulary representation without allocating 4 GiB.
+	tok.wideOffsets = make([]int, len(tok.offsets))
+	for i, offset := range tok.offsets {
+		tok.wideOffsets[i] = int(offset)
+	}
+	tok.offsets = nil
+	if tok.VocabularySize() != 3 || tok.token(0) != "" || tok.token(1) != "a" || tok.token(2) != "<special>" {
+		t.Fatal("wide offsets changed vocabulary")
+	}
+	ids, err := tok.Encode("<special>a", false, nil)
+	if err != nil || !reflect.DeepEqual(ids, []int{2, 1}) {
+		t.Fatalf("wide offsets encoding = %v, %v", ids, err)
+	}
+}
+
 func TestIndexCapacity(t *testing.T) {
 	for _, tc := range []struct{ n, want int }{{0, 1}, {1, 2}, {2, 4}, {3, 8}, {4, 8}} {
 		got, err := indexCapacity(tc.n)

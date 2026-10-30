@@ -32,7 +32,8 @@ type literal struct {
 // supplied Splitter is also safe for concurrent use.
 type Tokenizer struct {
 	tokens      string
-	offsets     []int
+	offsets     []uint32
+	wideOffsets []int
 	special     []bool
 	ids         []uint32
 	seed        maphash.Seed
@@ -43,9 +44,17 @@ type Tokenizer struct {
 }
 
 // VocabularySize returns the number of token IDs.
-func (t *Tokenizer) VocabularySize() int { return len(t.offsets) - 1 }
+func (t *Tokenizer) VocabularySize() int {
+	if t.wideOffsets != nil {
+		return len(t.wideOffsets) - 1
+	}
+	return len(t.offsets) - 1
+}
 
 func (t *Tokenizer) token(id int) string {
+	if t.wideOffsets != nil {
+		return t.tokens[t.wideOffsets[id]:t.wideOffsets[id+1]]
+	}
 	return t.tokens[t.offsets[id]:t.offsets[id+1]]
 }
 
@@ -155,12 +164,22 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	}
 	var packed strings.Builder
 	packed.Grow(total)
-	offsets := make([]int, len(tokens)+1)
+	var offsets []uint32
+	var wideOffsets []int
+	if uint64(total) <= uint64(^uint32(0)) {
+		offsets = make([]uint32, len(tokens)+1)
+	} else {
+		wideOffsets = make([]int, len(tokens)+1)
+	}
 	for i, s := range tokens {
 		packed.WriteString(s)
-		offsets[i+1] = packed.Len()
+		if wideOffsets != nil {
+			wideOffsets[i+1] = packed.Len()
+		} else {
+			offsets[i+1] = uint32(packed.Len())
+		}
 	}
-	t := &Tokenizer{tokens: packed.String(), offsets: offsets, ids: make([]uint32, capacity), seed: maphash.MakeSeed(), split: split}
+	t := &Tokenizer{tokens: packed.String(), offsets: offsets, wideOffsets: wideOffsets, ids: make([]uint32, capacity), seed: maphash.MakeSeed(), split: split}
 	if len(types) != 0 {
 		t.special = make([]bool, len(types))
 	}
