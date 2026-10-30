@@ -77,6 +77,19 @@ func TestControlLiteralsAreCopied(t *testing.T) {
 	}
 }
 
+func TestSpecialTypesAreCopied(t *testing.T) {
+	types := []int{3}
+	tok, err := New([]string{"🦄"}, nil, types, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	types[0] = 1
+	got, err := tok.TokenBytes(0)
+	if err != nil || string(got) != "🦄" {
+		t.Fatalf("special token bytes %q, %v", got, err)
+	}
+}
+
 func TestErrorsAndConcurrency(t *testing.T) {
 	tok := synthetic(t)
 	if _, err := New([]string{"a", "a"}, nil, nil, identity); err == nil {

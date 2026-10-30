@@ -29,8 +29,8 @@ type literal struct {
 // supplied Splitter is also safe for concurrent use.
 type Tokenizer struct {
 	tokens   []string
-	types    []int
-	ids      map[string]int
+	special  []bool
+	ids      map[string]uint32
 	ranks    map[pair]uint32
 	literals []literal
 	split    Splitter
@@ -77,16 +77,20 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	if uint64(len(tokens)) > uint64(^uint32(0)) || uint64(len(merges)) > uint64(^uint32(0)) {
 		return nil, fmt.Errorf("vocabulary or merge count exceeds uint32")
 	}
-	t := &Tokenizer{tokens: append([]string(nil), tokens...), types: append([]int(nil), types...), ids: make(map[string]int, len(tokens)), ranks: make(map[pair]uint32, len(merges)), split: split}
+	t := &Tokenizer{tokens: append([]string(nil), tokens...), ids: make(map[string]uint32, len(tokens)), ranks: make(map[pair]uint32, len(merges)), split: split}
+	if len(types) != 0 {
+		t.special = make([]bool, len(types))
+	}
 	for i, s := range tokens {
 		if _, ok := t.ids[s]; ok {
 			return nil, fmt.Errorf("duplicate token %q", s)
 		}
-		t.ids[s] = i
+		t.ids[s] = uint32(i)
 		if len(types) != 0 && (types[i] == 3 || types[i] == 4) {
 			if s == "" {
 				return nil, fmt.Errorf("empty special token")
 			}
+			t.special[i] = true
 			t.literals = append(t.literals, literal{s, i, types[i]})
 		}
 	}
@@ -104,7 +108,7 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		if !ok {
 			return nil, fmt.Errorf("merge %d has unknown right token", i)
 		}
-		t.ranks[pair{uint32(left), uint32(right)}] = uint32(i) // matches the reference's last rank for duplicate pairs
+		t.ranks[pair{left, right}] = uint32(i) // matches the reference's last rank for duplicate pairs
 	}
 	return t, nil
 }
@@ -181,7 +185,7 @@ func (t *Tokenizer) encodePiece(piece string) ([]int, error) {
 		j := next[i]
 		left, leftOK := t.ids[parts[i]]
 		right, rightOK := t.ids[parts[j]]
-		if r, ok := t.ranks[pair{uint32(left), uint32(right)}]; leftOK && rightOK && ok {
+		if r, ok := t.ranks[pair{left, right}]; leftOK && rightOK && ok {
 			heap.Push(h, candidate{int(r), i, j, parts[i], parts[j]})
 		}
 	}
@@ -209,7 +213,7 @@ func (t *Tokenizer) encodePiece(piece string) ([]int, error) {
 		if !ok {
 			return nil, fmt.Errorf("BPE produced token outside vocabulary: %q", parts[i])
 		}
-		out = append(out, id)
+		out = append(out, int(id))
 	}
 	return out, nil
 }
@@ -308,7 +312,7 @@ func (t *Tokenizer) TokenBytes(id int) ([]byte, error) {
 		return nil, fmt.Errorf("token id %d out of range", id)
 	}
 	s := t.tokens[id]
-	if len(t.types) > 0 && (t.types[id] == 3 || t.types[id] == 4) {
+	if len(t.special) > 0 && t.special[id] {
 		return []byte(s), nil
 	}
 	b := make([]byte, 0, len(s))
