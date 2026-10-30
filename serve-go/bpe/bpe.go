@@ -19,7 +19,7 @@ type Splitter func(string) []string
 // Span protects literal starts in [Start, End), measured in UTF-8 byte offsets.
 type Span struct{ Start, End int }
 
-type pair struct{ left, right string }
+type pair struct{ left, right int }
 type literal struct {
 	text    string
 	id, typ int
@@ -93,13 +93,15 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		if len(p) != 2 {
 			return nil, fmt.Errorf("merge %d is not a pair", i)
 		}
-		if _, ok := t.ids[p[0]]; !ok {
+		left, ok := t.ids[p[0]]
+		if !ok {
 			return nil, fmt.Errorf("merge %d has unknown left token", i)
 		}
-		if _, ok := t.ids[p[1]]; !ok {
+		right, ok := t.ids[p[1]]
+		if !ok {
 			return nil, fmt.Errorf("merge %d has unknown right token", i)
 		}
-		t.ranks[pair{p[0], p[1]}] = i // matches the reference's last rank for duplicate pairs
+		t.ranks[pair{left, right}] = i // matches the reference's last rank for duplicate pairs
 	}
 	return t, nil
 }
@@ -174,7 +176,9 @@ func (t *Tokenizer) encodePiece(piece string) ([]int, error) {
 			return
 		}
 		j := next[i]
-		if r, ok := t.ranks[pair{parts[i], parts[j]}]; ok {
+		left, leftOK := t.ids[parts[i]]
+		right, rightOK := t.ids[parts[j]]
+		if r, ok := t.ranks[pair{left, right}]; leftOK && rightOK && ok {
 			heap.Push(h, candidate{r, i, j, parts[i], parts[j]})
 		}
 	}
