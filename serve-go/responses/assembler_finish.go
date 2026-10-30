@@ -24,6 +24,7 @@ func (a *Assembler) Finish(done Done) ([]Event, error) {
 			validated, err := a.validate(text, done.Finish)
 			if err != nil {
 				a.terminal = true
+				a.validationFailed = true
 				return out, err
 			}
 			released, err := a.release(validated)
@@ -69,9 +70,12 @@ func (a *Assembler) Finish(done Done) ([]Event, error) {
 
 // Failed closes any open item and emits a terminal failure event.
 func (a *Assembler) Failed(message, code string) (Event, error) {
-	if err := a.ready(); err != nil {
-		return nil, err
+	if !a.validationFailed {
+		if err := a.ready(); err != nil {
+			return nil, err
+		}
 	}
+	a.validationFailed = false
 	if code == "" {
 		code = "server_error"
 	}

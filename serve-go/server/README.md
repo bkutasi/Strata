@@ -10,7 +10,7 @@ Anthropic requests at `POST /v1/messages`, including streaming, and counts
 prompts at `POST /v1/messages/count_tokens` without running generation.
 It also accepts stateless text-only requests at `POST /v1/responses`, with
 named streaming events, reasoning, stop strings and completed function calls. Stored responses,
-images, Responses structured output, and custom tools are not supported.
+images, JSON Schema output, and custom tools are not supported.
 As in the Python server, `store: true` is accepted but responses are not stored.
 Codex client metadata is accepted; the optional Codex thread-title and
 compaction-cache behaviors are not implemented.
@@ -25,9 +25,9 @@ streamed. All APIs reject images and use the renderer limits below. Other
 endpoints and model families are not implemented.
 Chat sampling supports temperature, top-p, top-k, min-p, repetition,
 frequency and presence penalties, penalty window, and seed.
-Chat also supports `response_format: {"type":"json_object"}`, including
-optional LaTeX escape repair; JSON Schema formats are not supported. Like the
-Python server, Chat rejects structured output when tools are enabled.
+Chat and Responses support JSON-object output, including optional LaTeX escape
+repair. Like the Python server, Chat rejects structured output when tools are
+enabled; Responses applies it to the final answer rather than tool calls.
 
 Build with Go 1.26.10:
 

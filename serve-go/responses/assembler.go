@@ -58,20 +58,21 @@ type Done struct {
 // Assembler is single-use and must not be accessed concurrently. Returned
 // events are snapshots; modifying one cannot mutate the assembler.
 type Assembler struct {
-	response  map[string]any
-	names     map[string]ToolName
-	item      map[string]any
-	id        func(string) (string, error)
-	now       func() time.Time
-	validate  func(string, string) (string, error)
-	prompt    int64
-	seq       int
-	jsonMode  bool
-	encrypted bool
-	called    bool
-	jsonText  strings.Builder
-	started   bool
-	terminal  bool
+	response         map[string]any
+	names            map[string]ToolName
+	item             map[string]any
+	id               func(string) (string, error)
+	now              func() time.Time
+	validate         func(string, string) (string, error)
+	prompt           int64
+	seq              int
+	jsonMode         bool
+	encrypted        bool
+	called           bool
+	jsonText         strings.Builder
+	started          bool
+	terminal         bool
+	validationFailed bool
 }
 
 func randomID(prefix string) (string, error) {

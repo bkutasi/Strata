@@ -124,8 +124,15 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if prepared.Format.Kind() != requestnorm.Null {
-		fail(w, 400, "invalid_request_error", "structured output is not supported")
-		return
+		kind, _ := prepared.Format.Lookup("type")
+		name, _ := kind.Text()
+		if name != "json_object" {
+			fail(w, 400, "invalid_request_error", "JSON Schema output is not supported")
+			return
+		}
+		o.structured = true
+		repair, _ := prepared.Format.Lookup("repair_latex_escapes")
+		o.repair, _ = repair.Bool()
 	}
 	for _, name := range prepared.Names {
 		if name.Kind != "function" {
@@ -142,6 +149,9 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if err = requestnorm.RequireMessages(prepared.Messages); err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
+	}
+	if o.structured {
+		prepared.Messages = addObjectDirective(prepared.Messages, len(prepared.Tools) > 0)
 	}
 	input := requestnorm.Result{Messages: prepared.Messages, Tools: prepared.Tools, Kwargs: prepared.Kwargs}
 	rendered, err := s.cfg.Renderer.Render(r.Context(), input)
@@ -190,7 +200,17 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	a, err := responses.NewAssembler(req, prepared, responses.AssemblerOptions{Model: s.cfg.Model, PromptTokens: int64(len(ids))})
+	var validate func(string, string) (string, error)
+	if o.structured {
+		validate = func(text, finish string) (string, error) {
+			out, validationErr := validateJSONObject(text, finish, o.repair)
+			if validationErr != nil {
+				return "", &structuredValidationError{err: validationErr}
+			}
+			return out, nil
+		}
+	}
+	a, err := responses.NewAssembler(req, prepared, responses.AssemblerOptions{Model: s.cfg.Model, PromptTokens: int64(len(ids)), Validate: validate})
 	if err != nil {
 		fail(w, 500, "server_error", err.Error())
 		return
@@ -318,6 +338,15 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		err = send(events)
 	}
 	if err != nil {
+		var validationErr *structuredValidationError
+		if errors.As(err, &validationErr) {
+			if !o.stream {
+				failResponsesRequest(w, &responses.Error{Message: validationErr.Error(), Status: http.StatusBadGateway, Kind: "server_error", Code: "structured_output_failed"})
+			} else if event, failureErr := a.Failed(validationErr.Error(), "structured_output_failed"); failureErr == nil {
+				_ = send([]responses.Event{event})
+			}
+			return
+		}
 		if !started {
 			fail(w, 500, "server_error", "could not encode response")
 		}

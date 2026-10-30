@@ -17,6 +17,24 @@ const objectDirective = "OUTPUT FORMAT REQUIREMENT: Return exactly one JSON obje
 	"Put all requested writing inside the appropriate JSON string fields.\nJSON Schema:\n" +
 	`{"type":"object"}`
 
+func addObjectDirective(messages []requestnorm.Message, withTools bool) []requestnorm.Message {
+	directive := objectDirective
+	if withTools {
+		directive += "\nThis applies only to your final answer. To use a tool, call it as usual; the JSON object is " +
+			"what you write once you are done with the tools."
+	}
+	if messages[0].Role == "system" {
+		messages[0].Content.Text += "\n\n" + directive
+		return messages
+	}
+	return append([]requestnorm.Message{{Role: "system", Content: requestnorm.TemplateContent{Text: directive}}}, messages...)
+}
+
+type structuredValidationError struct{ err error }
+
+func (e *structuredValidationError) Error() string { return e.err.Error() }
+func (e *structuredValidationError) Unwrap() error { return e.err }
+
 // extractJSONObject mirrors the Python server's first-object extraction.
 func extractJSONObject(text string) string {
 	s := strings.TrimSpace(text)

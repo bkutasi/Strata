@@ -123,4 +123,9 @@ func TestAssemblerFinishReturnsValidatorError(t *testing.T) {
 	if _, err := a.Finish(Done{}); err == nil {
 		t.Fatal("Finish after validator error succeeded")
 	}
+	event, err := a.Failed("invalid structured output", "structured_output_failed")
+	if err != nil || event["type"] != "response.failed" ||
+		event["response"].(map[string]any)["error"].(map[string]any)["code"] != "structured_output_failed" {
+		t.Fatalf("failure event = %#v, %v", event, err)
+	}
 }

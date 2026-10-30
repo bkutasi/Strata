@@ -314,11 +314,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		return result, o, err
 	}
 	if o.structured {
-		if result.Messages[0].Role == "system" {
-			result.Messages[0].Content.Text += "\n\n" + objectDirective
-		} else {
-			result.Messages = append([]requestnorm.Message{{Role: "system", Content: requestnorm.TemplateContent{Text: objectDirective}}}, result.Messages...)
-		}
+		result.Messages = addObjectDirective(result.Messages, false)
 	}
 	kind, force := normalizeForceChoice(toolChoice, result.Tools, s.cfg.Family)
 	o.noTools, o.force = kind == "none", force

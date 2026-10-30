@@ -293,7 +293,7 @@ func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	for _, body := range []string{
 		`{"input":"x","model":"other"}`, `{"input":"x","stream":"yes"}`,
 		`{"input":"x","previous_response_id":"old"}`,
-		`{"input":"x","text":{"format":{"type":"json_object"}}}`,
+		`{"input":"x","text":{"format":{"type":"json_schema","name":"x","schema":{"type":"object"}}}}`,
 		`{"input":[{"role":"user","content":[{"type":"input_image","image_url":"http://example.test"}]}]}`,
 		`{"input":"x","max_output_tokens":9999}`, `{"input":"x","top_p":0}`,
 	} {
