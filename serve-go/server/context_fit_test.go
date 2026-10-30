@@ -76,3 +76,27 @@ func TestAPIsFitOutputToContext(t *testing.T) {
 		}
 	}
 }
+
+func TestLargeOutputBudgetFitsContext(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	eng := &contextEngine{limit: 8192}
+	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
+		MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{`{"messages":[{"role":"user","content":"hi"}],"max_tokens":5000}`, 5000},
+		{`{"messages":[{"role":"user","content":"hi"}]}`, 8182},
+	} {
+		eng.requested = 0
+		response := responsesRequest(handler, "http://127.0.0.1/v1/chat/completions", tc.body, "")
+		if response.Code != http.StatusOK || eng.requested != tc.want {
+			t.Errorf("status %d, requested %d, want %d: %s", response.Code, eng.requested, tc.want, response.Body)
+		}
+	}
+}

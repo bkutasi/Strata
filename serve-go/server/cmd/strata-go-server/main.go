@@ -95,7 +95,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: 4096, MaxConcurrent: 4})
+	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4})
 	if err != nil {
 		return err
 	}
