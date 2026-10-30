@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSupervisorLogitBiasRestartMismatch(t *testing.T) {
@@ -39,6 +40,43 @@ func TestSupervisorLogitBiasRestartMismatch(t *testing.T) {
 	}
 	if _, err := s.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{}); err != nil {
 		t.Fatalf("replacement received rejected command: %v", err)
+	}
+}
+
+func TestSupervisorQueuedCancellationDoesNotStopEngine(t *testing.T) {
+	initial := startFake(t, "normal", &bytes.Buffer{})
+	s, err := Supervise(initial, func(context.Context) (*Engine, error) {
+		return nil, errors.New("unexpected restart")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close(testContext(t)) })
+	<-s.gate
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.GenerateWithOptions(ctx, []int{1}, 1, RequestOptions{OnProgress: func() error {
+			cancel()
+			return nil
+		}})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued generation error=%v", err)
+		}
+	case <-time.After(35 * time.Second):
+		t.Fatal("queued generation did not cancel")
+	}
+	s.gate <- struct{}{}
+	if !s.Alive() {
+		t.Fatal("queued cancellation stopped the active engine")
+	}
+	if _, err := s.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{}); err != nil {
+		t.Fatalf("engine could not serve after queued cancellation: %v", err)
 	}
 }
 

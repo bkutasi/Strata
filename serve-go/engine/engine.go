@@ -331,8 +331,8 @@ type LogprobAlternative struct {
 	Value   float64
 }
 
-// RequestOptions configures a text request. OnProgress runs synchronously for
-// native PP records and every 10 seconds while an active engine is quiet.
+// RequestOptions configures a text request. OnProgress runs synchronously while
+// waiting for the engine, for native PP records and while an engine is quiet.
 // OnToken runs synchronously in protocol order, after the token is appended to
 // Result and before DONE.
 // OnLogprob runs immediately before OnToken, with nil if no LP was emitted.
@@ -529,10 +529,11 @@ func generationImageCommand(ids []int, maxNew int, keys, embeddingsPath string) 
 }
 
 // GenerateWithOptions sends GEN or GENI. ErrStopGeneration from a callback
-// stops and drains the request; other callback errors discard the process.
+// stops and drains the request; other callback errors discard the process once
+// generation starts. Errors while queued leave the active engine untouched.
 // Cancellation has the same STOP and discard behavior as Generate; no further
-// callbacks run after cancellation is observed. A callback panic discards the
-// process and propagates. Callbacks must return promptly.
+// callbacks run after cancellation is observed. A callback panic during
+// generation discards the process and propagates. Callbacks must return promptly.
 func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int, opts RequestOptions) (Result, error) {
 	var result Result
 	keys, err := samplingKeys(opts.Sampling)
@@ -548,7 +549,7 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	if err != nil {
 		return result, err
 	}
-	if err := e.acquire(ctx); err != nil {
+	if err := acquireWithProgress(ctx, nil, e.gate, opts.OnProgress); err != nil {
 		return result, err
 	}
 	defer func() { e.gate <- struct{}{} }()

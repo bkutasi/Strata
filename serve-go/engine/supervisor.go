@@ -50,12 +50,8 @@ func (s *Supervisor) GenerateWithOptions(ctx context.Context, ids []int, maxNew 
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	select {
-	case <-ctx.Done():
-		return result, ctx.Err()
-	case <-s.stop.Done():
-		return result, ErrClosed
-	case <-s.gate:
+	if err := acquireWithProgress(ctx, s.stop.Done(), s.gate, opts.OnProgress); err != nil {
+		return result, err
 	}
 	defer func() { s.gate <- struct{}{} }()
 	if s.closed.Load() {
