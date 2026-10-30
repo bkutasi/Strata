@@ -352,7 +352,7 @@ func TestChatTextResponseFormat(t *testing.T) {
 			t.Errorf("%s: %d %s", format, w.Code, w.Body.String())
 		}
 	}
-	w := responsesRequest(h, "/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_object"}}`, "secret")
+	w := responsesRequest(h, "/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_schema"}}`, "secret")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("unsupported structured format: %d %s", w.Code, w.Body.String())
 	}

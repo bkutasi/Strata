@@ -147,12 +147,14 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 }
 
 type options struct {
-	stream   bool
-	noTools  bool
-	force    string
-	max      int
-	stops    []string
-	sampling engine.Sampling
+	stream     bool
+	noTools    bool
+	force      string
+	max        int
+	stops      []string
+	sampling   engine.Sampling
+	structured bool
+	repair     bool
 }
 
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
@@ -197,8 +199,13 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			if v.Kind() != requestnorm.Null {
 				kind, ok := v.Lookup("type")
 				text, isString := kind.Text()
-				if v.Kind() != requestnorm.Object || !ok || !isString || kind.Kind() != requestnorm.String || text != "text" {
+				if v.Kind() != requestnorm.Object || !ok || !isString || kind.Kind() != requestnorm.String || (text != "text" && text != "json_object") {
 					return requestnorm.Result{}, o, errors.New("structured response_format is not supported")
+				}
+				if text == "json_object" {
+					o.structured = true
+					repair, _ := v.Lookup("repair_latex_escapes")
+					o.repair, _ = repair.Bool()
 				}
 			}
 		case "max_tokens", "max_completion_tokens":
@@ -306,10 +313,20 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	if err = requestnorm.RequireMessages(result.Messages); err != nil {
 		return result, o, err
 	}
+	if o.structured {
+		if result.Messages[0].Role == "system" {
+			result.Messages[0].Content.Text += "\n\n" + objectDirective
+		} else {
+			result.Messages = append([]requestnorm.Message{{Role: "system", Content: requestnorm.TemplateContent{Text: objectDirective}}}, result.Messages...)
+		}
+	}
 	kind, force := normalizeForceChoice(toolChoice, result.Tools, s.cfg.Family)
 	o.noTools, o.force = kind == "none", force
 	if o.noTools {
 		result.Tools = nil
+	}
+	if o.structured && len(result.Tools) > 0 {
+		return requestnorm.Result{}, o, errors.New("structured response_format with tools is not supported")
 	}
 	return result, o, nil
 }
@@ -409,9 +426,10 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	var calls []map[string]any
 	matcher := streamtext.NewStopMatcher(opt.stops)
 	started := false
+	structuredReady := false
 	var timings map[string]any
 	send := func(delta map[string]any, finish any, usage any) error {
-		if !opt.stream {
+		if !opt.stream || (opt.structured && !structuredReady) {
 			return nil
 		}
 		if !started {
@@ -515,6 +533,40 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(calls) > 0 && finish == "stop" {
 		finish = "tool_calls"
+	}
+	if opt.structured {
+		validated, validationErr := validateJSONObject(content.String(), finish, opt.repair)
+		if validationErr != nil {
+			body, _ := json.Marshal(map[string]any{"error": map[string]string{
+				"type": "structured_output_failed", "code": "structured_output_failed", "message": validationErr.Error(),
+			}})
+			if opt.stream {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Cache-Control", "no-cache")
+				_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", body)
+				_ = http.NewResponseController(w).Flush()
+			} else {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write(body)
+			}
+			return
+		}
+		content.Reset()
+		content.WriteString(validated)
+		structuredReady = true
+		if opt.stream {
+			if err = send(map[string]any{"role": "assistant", "content": ""}, nil, nil); err != nil {
+				return
+			}
+			delta := map[string]any{"content": validated}
+			if reason.Len() > 0 {
+				delta["reasoning_content"] = reason.String()
+			}
+			if err = send(delta, nil, nil); err != nil {
+				return
+			}
+		}
 	}
 	if deep, ok := parser.(*outputparser.DeepSeekParser); ok && deep.ReasoningFallback() && !opt.stream {
 		reason.Reset()
