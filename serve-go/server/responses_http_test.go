@@ -110,6 +110,119 @@ func TestResponsesToolAndStream(t *testing.T) {
 	}
 }
 
+func TestResponsesStopSequences(t *testing.T) {
+	h := responsesHandler(t, "before STOP hidden", "stop", false)
+	for _, tc := range []struct {
+		fields string
+		want   string
+	}{
+		{`"stop":"STOP"`, "before "},
+		{`"stop":["STOP","hidden"]`, "before "},
+		{`"stop":null,"stop_sequences":["STOP"]`, "before "},
+		{`"stop":"hidden","stop_sequences":["STOP"]`, "before STOP "},
+		{`"stop":[],"stop_sequences":["STOP"]`, "before STOP hidden"},
+	} {
+		for _, stream := range []bool{false, true} {
+			body := `{"input":"hello",` + tc.fields
+			if stream {
+				body += `,"stream":true`
+			}
+			w := responsesRequest(h, "/v1/responses", body+`}`, "secret")
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s stream=%v: %d %s", tc.fields, stream, w.Code, w.Body.String())
+			}
+			var text string
+			if stream {
+				for _, line := range strings.Split(w.Body.String(), "\n") {
+					if !strings.HasPrefix(line, "data: ") {
+						continue
+					}
+					var event struct {
+						Type  string `json:"type"`
+						Delta string `json:"delta"`
+					}
+					if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+						t.Fatal(err)
+					}
+					if event.Type == "response.output_text.delta" {
+						text += event.Delta
+					}
+				}
+				if !strings.Contains(w.Body.String(), "event: response.completed\n") {
+					t.Errorf("missing completion: %s", w.Body.String())
+				}
+			} else {
+				var response struct {
+					Output []struct {
+						Content []struct {
+							Text string `json:"text"`
+						} `json:"content"`
+					} `json:"output"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || len(response.Output) != 1 || len(response.Output[0].Content) != 1 {
+					t.Fatalf("response %s: %v", w.Body.String(), err)
+				}
+				text = response.Output[0].Content[0].Text
+			}
+			if text != tc.want {
+				t.Errorf("%s stream=%v: text %q, want %q", tc.fields, stream, text, tc.want)
+			}
+		}
+	}
+}
+
+func TestResponsesInvalidStopSequences(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	for _, fields := range []string{
+		`"stop":42`, `"stop":["x",1]`, `"stop":["a","b","c","d","e"]`,
+		`"stop_sequences":"x"`, `"stop_sequences":[null]`,
+	} {
+		w := responsesRequest(h, "/v1/responses", `{"input":"hello",`+fields+`}`, "secret")
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d: %s", fields, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestResponsesStopIgnoresReasoningAndToolBoundaries(t *testing.T) {
+	t.Run("reasoning", func(t *testing.T) {
+		h := responsesHandler(t, "STOP thinking</think>visible STOP hidden", "stop", true)
+		w := responsesRequest(h, "/v1/responses", `{"input":"hello","stop":"STOP"}`, "secret")
+		var response struct {
+			Output []struct {
+				Type    string `json:"type"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"output"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK ||
+			len(response.Output) != 2 || response.Output[0].Content[0].Text != "STOP thinking" ||
+			response.Output[1].Content[0].Text != "visible " {
+			t.Fatalf("status %d: %s, %v", w.Code, w.Body.String(), err)
+		}
+	})
+	t.Run("tool boundary", func(t *testing.T) {
+		text := "before ST<tool_call><function=lookup></function></tool_call>OP after"
+		h := responsesHandler(t, text, "stop", false)
+		body := `{"input":"hello","stop":"STOP","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`
+		w := responsesRequest(h, "/v1/responses", body, "secret")
+		var response struct {
+			Output []struct {
+				Type    string `json:"type"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"output"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK ||
+			len(response.Output) != 3 || response.Output[0].Content[0].Text != "before ST" ||
+			response.Output[1].Type != "function_call" || response.Output[2].Content[0].Text != "OP after" {
+			t.Fatalf("status %d: %s, %v", w.Code, w.Body.String(), err)
+		}
+	})
+}
+
 func TestResponsesToolChoicesMatchStatelessPython(t *testing.T) {
 	text := "<tool_call><function=lookup><parameter=x>7</parameter></function></tool_call>"
 	h := responsesHandler(t, text, "stop", false)

@@ -14,7 +14,42 @@ import (
 	"strata/outputparser"
 	"strata/requestnorm"
 	"strata/responses"
+	"strata/streamtext"
 )
+
+func responsesStops(root requestnorm.Value) ([]string, error) {
+	stop, _ := root.Lookup("stop")
+	name := "stop"
+	if stop.Kind() == requestnorm.Null {
+		stop, _ = root.Lookup("stop_sequences")
+		name = "stop_sequences"
+	}
+	if stop.Kind() == requestnorm.Null {
+		return nil, nil
+	}
+	var values []requestnorm.Value
+	if name == "stop" && stop.Kind() == requestnorm.String {
+		values = []requestnorm.Value{stop}
+	} else if stop.Kind() == requestnorm.Array {
+		values = stop.Items()
+	} else {
+		return nil, fmt.Errorf("%s must be a list of strings", name)
+	}
+	if name == "stop" && len(values) > 4 {
+		return nil, errors.New("stop takes at most 4 strings")
+	}
+	var stops []string
+	for _, value := range values {
+		text, ok := value.Text()
+		if !ok || value.Kind() != requestnorm.String {
+			return nil, fmt.Errorf("%s must contain strings", name)
+		}
+		if text != "" {
+			stops = append(stops, text)
+		}
+	}
+	return stops, nil
+}
 
 func failResponsesRequest(w http.ResponseWriter, err error) {
 	var responseErr *responses.Error
@@ -50,6 +85,11 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	root, err := requestnorm.ParseValue(data)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
+		return
+	}
+	stops, err := responsesStops(root)
+	if err != nil {
+		failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "stop", Status: 400})
 		return
 	}
 	o := options{max: s.cfg.MaxOutputTokens}
@@ -201,10 +241,27 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		}
 		return send(events)
 	}
+	matcher := streamtext.NewStopMatcher(stops)
 	route := func(events []outputparser.Event) error {
 		for _, event := range events {
+			if event.Kind == "content" {
+				if text := matcher.Push(event.Text); text != "" {
+					if e := feed(responses.ParserEvent{Kind: "content", Text: text}); e != nil {
+						return e
+					}
+				}
+				if matcher.Hit() != "" {
+					return stopGeneration
+				}
+				continue
+			}
+			if text := matcher.Boundary(); text != "" {
+				if e := feed(responses.ParserEvent{Kind: "content", Text: text}); e != nil {
+					return e
+				}
+			}
 			switch event.Kind {
-			case "content", "reasoning":
+			case "reasoning":
 				if e := feed(responses.ParserEvent{Kind: event.Kind, Text: event.Text}); e != nil {
 					return e
 				}
@@ -235,6 +292,11 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	var result generationResult
 	if err == nil {
 		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, route)
+	}
+	if err == nil {
+		if text := matcher.Finish(); text != "" {
+			err = feed(responses.ParserEvent{Kind: "content", Text: text})
+		}
 	}
 	if err != nil {
 		if r.Context().Err() != nil {

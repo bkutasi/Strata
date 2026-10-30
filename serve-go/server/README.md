@@ -9,7 +9,7 @@ health at `GET /health` and `GET /api/health`. It also accepts text-only
 Anthropic requests at `POST /v1/messages`, including streaming, and counts
 prompts at `POST /v1/messages/count_tokens` without running generation.
 It also accepts stateless text-only requests at `POST /v1/responses`, with
-named streaming events, reasoning and completed function calls. Stored responses,
+named streaming events, reasoning, stop strings and completed function calls. Stored responses,
 images, structured output, and custom tools are not supported.
 As in the Python server, `store: true` is accepted but responses are not stored.
 Codex client metadata is accepted; the optional Codex thread-title and
