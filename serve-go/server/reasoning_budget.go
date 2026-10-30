@@ -57,12 +57,22 @@ func (s *server) effectiveReasoningBudget(thinking bool, max, budget int) int {
 	reserve := min(maxInt(512, max/4), max/2)
 	if budget == 0 && !s.cfg.DisableAnswerRoom && max >= 1024 {
 		budget = max - reserve
+		if max <= 32768 && s.cfg.StatusLogger != nil {
+			s.cfg.StatusLogger.Printf("[strata] thinking limited to %d of max_tokens %d so the answer has room (\"answer_room\": false in the config turns this off)", budget, max)
+		}
 	}
 	if budget == 0 && !s.cfg.DisableAnswerRoom && s.cfg.Family == requestnorm.FamilyDeepSeek && max >= 48 && max < 1024 {
 		budget = max / 2
+		if s.cfg.StatusLogger != nil {
+			s.cfg.StatusLogger.Printf("[strata] thinking limited to %d of max_tokens %d so the answer has room (\"answer_room\": false in the config turns this off)", budget, max)
+		}
 	}
 	if budget > 0 {
-		budget = min(budget, maxInt(1, max-reserve))
+		capped := min(budget, maxInt(1, max-reserve))
+		if capped < budget && s.cfg.StatusLogger != nil {
+			s.cfg.StatusLogger.Printf("[strata] thinking capped at %d of max_tokens %d to leave room for the answer (budget %d)", capped, max, budget)
+		}
+		budget = capped
 	}
 	return budget
 }

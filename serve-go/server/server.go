@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -48,6 +49,7 @@ type Config struct {
 	AnthropicThinkingOnRequest bool
 	DefaultSampling            engine.Sampling
 	DefaultReasoningEffort     string
+	StatusLogger               *log.Logger
 }
 
 // Engine is the native generation service used by the handler.
@@ -665,7 +667,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, onLogprob, streamHeartbeat(w, opt.stream, &started), s.repeatStop)
+		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, onLogprob, streamHeartbeat(w, opt.stream, &started), s.cfg.StatusLogger, s.repeatStop)
 	}
 	result, count := pumped.result, pumped.count
 	timings = pumped.timings

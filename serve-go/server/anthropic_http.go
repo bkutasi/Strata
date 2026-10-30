@@ -181,7 +181,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, nil, streamHeartbeat(w, opt.stream, &started), s.repeatStop)
+		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, nil, streamHeartbeat(w, opt.stream, &started), s.cfg.StatusLogger, s.repeatStop)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

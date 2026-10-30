@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"strata/engine"
 	"strata/outputparser"
@@ -74,11 +76,10 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 }
 
 func generateWithForce(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error, repeatLimit ...int) (generationResult, error) {
-	return generateWithEmbeddings(ctx, e, tokenizer, parser, ids, max, sampling, stopIDs, budget, force, callback, "", nil, nil, repeatLimit...)
+	return generateWithEmbeddings(ctx, e, tokenizer, parser, ids, max, sampling, stopIDs, budget, force, callback, "", nil, nil, nil, repeatLimit...)
 }
 
-func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error, embeddings string, onLogprob func(int, *engine.Logprob) error, onProgress func() error, repeatLimit ...int) (generationResult, error) {
-	var out generationResult
+func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer, parser generationParser, ids []int, max int, sampling engine.Sampling, stopIDs map[int]bool, budget int, force string, callback func([]outputparser.Event) error, embeddings string, onLogprob func(int, *engine.Logprob) error, onProgress func() error, statusLogger *log.Logger, repeatLimit ...int) (out generationResult, returnErr error) {
 	decoder := streamtext.Decoder{}
 	stoppedToken := false
 	repeated, runID, runLength := false, 0, 0
@@ -99,6 +100,35 @@ func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltoken
 		reserve := min(maxInt(512, max/4), max/2)
 		budget = min(budget, maxInt(1, max-reserve))
 	}
+	var statusLog *requestStatus
+	var promptProgress func(int, int)
+	if statusLogger != nil {
+		state := ""
+		if hasStatus {
+			state = status.Status().State
+		}
+		statusLog = newRequestStatus(statusLogger, max, budget, state, time.Now())
+		defer func() {
+			statusLog.done(time.Now(), out, returnErr, ctx.Err(), repeated, limit)
+			if hasStatus {
+				diagnostics := status.Status()
+				if diagnostics.Rescued > 0 || diagnostics.Refused > 0 {
+					statusLogger.Printf("[strata] tool calls inside the thinking: %d read as calls, %d kept as reasoning (quoted, or the turn did not end on a stop)", diagnostics.Rescued, diagnostics.Refused)
+				}
+			}
+		}()
+		promptProgress = func(current, total int) { statusLog.prompt(time.Now(), current, total) }
+		heartbeat := onProgress
+		onProgress = func() error {
+			if time.Since(statusLog.last) >= time.Second {
+				statusLog.tick(time.Now())
+			}
+			if heartbeat != nil {
+				return heartbeat()
+			}
+			return nil
+		}
+	}
 	prompt := ids
 	thought := 0
 	tail := ""
@@ -106,7 +136,7 @@ func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltoken
 	for {
 		var segment []int
 		wrap, opens := false, false
-		result, err := e.GenerateWithOptions(ctx, prompt, max-out.count, engine.RequestOptions{Sampling: sampling, EmbeddingsPath: embeddings, OnLogprob: onLogprob, OnProgress: onProgress, OnToken: func(id int) error {
+		result, err := e.GenerateWithOptions(ctx, prompt, max-out.count, engine.RequestOptions{Sampling: sampling, EmbeddingsPath: embeddings, OnLogprob: onLogprob, OnProgress: onProgress, OnPromptProgress: promptProgress, OnToken: func(id int) error {
 			out.count++
 			if out.count > max {
 				return errors.New("engine exceeded output token limit")
@@ -157,6 +187,9 @@ func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltoken
 			if err != nil {
 				return err
 			}
+			if statusLog != nil {
+				statusLog.note(time.Now(), out.count, events)
+			}
 			if force != "" {
 				for _, event := range events {
 					if event.Kind == "tool_start" || event.Kind == "tool_call" {
@@ -177,6 +210,9 @@ func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltoken
 				if state.State == "reasoning" {
 					thought++
 					if thought >= budget && state.Clean && !decoder.Pending() {
+						if statusLog != nil {
+							statusLog.logger.Printf("[strata] thinking budget reached (%d tokens): wrapping up the thinking", thought)
+						}
 						wrap = true
 						return engine.ErrStopGeneration
 					}
@@ -243,6 +279,9 @@ func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltoken
 			if err != nil {
 				return out, err
 			}
+			if statusLog != nil {
+				statusLog.note(time.Now(), out.count, events)
+			}
 			if err = callback(events); errors.Is(err, stopGeneration) {
 				stoppedToken = true
 				break
@@ -258,6 +297,9 @@ func generateWithEmbeddings(ctx context.Context, e Engine, tokenizer *modeltoken
 		continued = append(continued, segment...)
 		prompt = append(continued, extra...)
 		budget = 0
+		if statusLog != nil {
+			statusLog.budget = 0
+		}
 	}
 	if repeated {
 		out.result.Finish = "length"

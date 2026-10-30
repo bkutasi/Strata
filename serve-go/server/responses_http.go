@@ -322,7 +322,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 				return send([]responses.Event{event})
 			}
 		}
-		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, nil, progress, s.repeatStop)
+		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, nil, progress, s.cfg.StatusLogger, s.repeatStop)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

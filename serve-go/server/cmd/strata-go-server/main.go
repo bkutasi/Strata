@@ -264,7 +264,39 @@ func run() error {
 			}
 		}()
 	}
+	logOffset := int64(0)
+	logPath := ""
+	if f, ok := engineLog.(*os.File); ok {
+		if st, statErr := f.Stat(); statErr != nil {
+			log.Printf("startup narration log: %v", statErr)
+		} else if st.Mode().IsRegular() {
+			logOffset = st.Size()
+			logPath = f.Name()
+		}
+	}
+	narrationDone := make(chan struct{})
+	narrationJoined := make(chan struct{})
+	go narrateStart(logPath, logOffset, narrationDone, narrationJoined, 500*time.Millisecond, time.Now, func(e narrationEvent) {
+		switch e.kind {
+		case "weights":
+			fmt.Fprintln(os.Stderr, "[strata] starting the engine: reading the model's weights ...")
+		case "heartbeat":
+			fmt.Fprintf(os.Stderr, "[strata] still starting (%s s) - please wait ...\n", e.data)
+		case "arena":
+			fmt.Fprintln(os.Stderr, "[strata] loading the experts\n         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.\n         Please wait and don't close this window; the server says when it is ready.")
+		case "loaded":
+			fmt.Fprintf(os.Stderr, "[strata] experts loaded: %s\n", e.data)
+		case "cache":
+			fmt.Fprintf(os.Stderr, "[strata] filling the GPU's expert cache (%s) ...\n", e.data)
+		case "up":
+			fmt.Fprintln(os.Stderr, "[strata] almost ready ...")
+		case "log_error":
+			log.Printf("startup narration log: %s", e.data)
+		}
+	})
 	eng, err := start(ctx)
+	close(narrationDone)
+	<-narrationJoined
 	if err != nil {
 		if errors.Is(err, context.Canceled) && !errors.Is(err, engine.ErrUnreaped) {
 			return nil
@@ -288,7 +320,7 @@ func run() error {
 	if visionReader != nil {
 		maxBody = 48 << 20
 	}
-	serverConfig := server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: maxBody, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, DisableResponses: *noResponses, DisableAnthropic: *noAnthropic, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort}
+	serverConfig := server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: maxBody, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, DisableResponses: *noResponses, DisableAnthropic: *noAnthropic, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort, StatusLogger: log.New(os.Stderr, "", 0)}
 	if visionReader != nil {
 		serverConfig.Vision = visionReader
 	}
