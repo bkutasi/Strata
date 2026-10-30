@@ -50,8 +50,12 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 				return requestnorm.AnthropicResult{}, o, errors.New("invalid max_tokens")
 			}
 			b, _ := v.MarshalJSON()
-			if json.Unmarshal(b, &o.max) != nil || o.max < 1 || o.max > s.cfg.MaxOutputTokens {
+			var n int
+			if json.Unmarshal(b, &n) != nil || n > s.cfg.MaxOutputTokens {
 				return requestnorm.AnthropicResult{}, o, errors.New("invalid max_tokens")
+			}
+			if n > 0 {
+				o.max = n
 			}
 			maxSeen = true
 		case "stream":

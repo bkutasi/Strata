@@ -62,7 +62,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			if v.Kind() != requestnorm.Null {
 				text, ok := v.Integer()
 				n, e := strconv.Atoi(text)
-				if !ok || e != nil || n < -1 || n > s.cfg.MaxOutputTokens {
+				if !ok || e != nil || n > s.cfg.MaxOutputTokens {
 					err = errors.New("invalid max_output_tokens")
 				} else if n > 0 {
 					o.max = n

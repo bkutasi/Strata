@@ -100,3 +100,28 @@ func TestLargeOutputBudgetFitsContext(t *testing.T) {
 		}
 	}
 }
+
+func TestNonPositiveOutputLimitsUseRemainingContext(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	eng := &contextEngine{limit: 100}
+	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
+		MaxOutputTokens: 100, MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ path, body string }{
+		{"/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":0}`},
+		{"/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":-1}`},
+		{"/v1/messages", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":0}`},
+		{"/v1/messages", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":-1}`},
+		{"/v1/responses", `{"input":"hi","max_output_tokens":0}`},
+		{"/v1/responses", `{"input":"hi","max_output_tokens":-1}`},
+	} {
+		eng.requested = 0
+		response := responsesRequest(handler, "http://127.0.0.1"+tc.path, tc.body, "")
+		if response.Code != http.StatusOK || eng.requested != 90 {
+			t.Errorf("%s %s: status %d, requested %d: %s", tc.path, tc.body, response.Code, eng.requested, response.Body)
+		}
+	}
+}

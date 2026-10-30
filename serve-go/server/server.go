@@ -229,10 +229,13 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			}
 			var n int
 			b, _ := v.MarshalJSON()
-			if json.Unmarshal(b, &n) != nil || n < 1 || n > s.cfg.MaxOutputTokens {
+			if json.Unmarshal(b, &n) != nil || n > s.cfg.MaxOutputTokens {
 				return requestnorm.Result{}, o, errors.New("invalid max tokens")
 			}
-			o.max, maxSet = n, true
+			if n > 0 {
+				o.max = n
+			}
+			maxSet = true
 		case "stop":
 			if v.Kind() == requestnorm.String {
 				t, _ := v.Text()
