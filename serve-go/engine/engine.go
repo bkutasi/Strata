@@ -80,7 +80,21 @@ func (e *Engine) ContextLimit() int { return e.Context }
 // a native engine). stderr is separate from the protocol; nil discards it.
 // ctx bounds startup only.
 func Start(ctx context.Context, exe string, args []string, stderr io.Writer) (_ *Engine, err error) {
+	return StartWithProcessConfig(ctx, exe, args, stderr, ProcessConfig{})
+}
+
+// ProcessConfig sets the engine child's working directory and environment.
+// A nil Env inherits the current process environment.
+type ProcessConfig struct {
+	Dir string
+	Env []string
+}
+
+// StartWithProcessConfig starts the engine using the supplied child settings.
+func StartWithProcessConfig(ctx context.Context, exe string, args []string, stderr io.Writer, config ProcessConfig) (_ *Engine, err error) {
 	cmd := exec.Command(exe, args...)
+	cmd.Dir = config.Dir
+	cmd.Env = config.Env
 	if stderr != nil {
 		cmd.Stderr = stderr
 	}

@@ -20,6 +20,13 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 	mode := os.Args[3]
+	if mode == "process-config" {
+		cwd, err := os.Getwd()
+		if err != nil || cwd != os.Getenv("STRATA_TEST_EXPECTED_DIR") || os.Getenv("STRATA_TEST_ENGINE_ENV") != "engine-only" {
+			fmt.Println("ERR child process configuration mismatch")
+			os.Exit(2)
+		}
+	}
 	if mode == "startup-eof" {
 		os.Exit(0)
 	}
@@ -156,6 +163,23 @@ func TestHelperProcess(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestProcessConfig(t *testing.T) {
+	dir := t.TempDir()
+	env := append(os.Environ(), "STRATA_TEST_EXPECTED_DIR="+dir, "STRATA_TEST_ENGINE_ENV=engine-only")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	eng, err := StartWithProcessConfig(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "process-config"}, io.Discard, ProcessConfig{Dir: dir, Env: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("STRATA_TEST_ENGINE_ENV") == "engine-only" {
+		t.Fatal("child environment leaked into parent")
+	}
 }
 
 func TestStopGenerationDrainsAndReusesEngine(t *testing.T) {

@@ -50,6 +50,15 @@ an API key is required for non-loopback addresses.
 Use `--family deepseek41` for DeepSeek. The pack must include a compatible
 V4.1 template; unlike Python, this experiment does not replace older templates.
 
+The server also accepts a limited standalone Python JSON run config:
+`strata-go-server --config /absolute/path/run.json --port 50000 --api-key-env STRATA_API_KEY`.
+It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
+integer `gpu`, string-valued `env`, and `log`. Other config fields are rejected
+rather than silently ignored. `--api-key` overrides the config key, while
+`--api-key-env` takes precedence over both. The config's host is used unless
+`--listen` is supplied; check it before starting a network-accessible server.
+This path has not been validated with every Python config or a real model.
+
 An interrupted generation or engine protocol error discards the engine
 process. The next request starts it again; the failed request is not retried.
 If a failed startup's child cannot be confirmed stopped, further restarts are

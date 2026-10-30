@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,8 +44,54 @@ func run() error {
 	engineExe := flag.String("engine", "", "native executable")
 	keyEnv := flag.String("api-key-env", "", "environment variable containing API key")
 	ownerFD := flag.String("owner-fd", "", "inherited owner pipe descriptor")
+	configPath := flag.String("config", "", "standalone Strata JSON config")
+	port := flag.Int("port", 8080, "API port when using --config")
+	apiKey := flag.String("api-key", "", "API key (prefer --api-key-env)")
 	flag.Var(&engineArgs, "engine-arg", "native engine argument (repeat; include --serve and model flags)")
 	flag.Parse()
+	var processConfig engine.ProcessConfig
+	var engineLog io.Writer = os.Stderr
+	var configuredKey string
+	if *configPath != "" {
+		cfg, err := readStandaloneConfig(*configPath)
+		if err != nil {
+			return err
+		}
+		set := make(map[string]bool)
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		if set["engine"] || set["engine-arg"] || set["pack"] || set["model"] {
+			return errors.New("--config cannot be combined with engine, engine-arg, pack or model")
+		}
+		*engineExe, *pack, *model = cfg.Exe, cfg.Tokenizer, cfg.Model
+		engineArgs = append(args{"--serve"}, cfg.Args...)
+		processConfig.Dir = cfg.Cwd
+		processConfig.Env, err = cfg.childEnv()
+		if err != nil {
+			return err
+		}
+		if !set["listen"] {
+			host := cfg.Host
+			if host == "" {
+				host = "127.0.0.1"
+			}
+			*listen = net.JoinHostPort(host, strconv.Itoa(*port))
+		} else if set["port"] {
+			return errors.New("--port cannot be combined with --listen")
+		}
+		configuredKey = cfg.APIKey
+		if cfg.Log != "" {
+			logFile, err := os.OpenFile(cfg.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := logFile.Close(); err != nil {
+					log.Printf("engine log close: %v", err)
+				}
+			}()
+			engineLog = logFile
+		}
+	}
 	if flag.NArg() != 0 || *model == "" || *pack == "" || *engineExe == "" {
 		flag.Usage()
 		os.Exit(2)
@@ -57,12 +105,19 @@ func run() error {
 		return err
 	}
 	var keys []string
+	if *apiKey != "" {
+		configuredKey = *apiKey
+	} else if key := os.Getenv("STRATA_API_KEY"); key != "" {
+		configuredKey = key
+	}
 	if *keyEnv != "" {
 		key := os.Getenv(*keyEnv)
 		if key == "" {
 			return fmt.Errorf("API key environment variable is empty")
 		}
 		keys = []string{key}
+	} else if configuredKey != "" && !strings.EqualFold(strings.TrimSpace(configuredKey), "none") {
+		keys = []string{configuredKey}
 	}
 	ip := net.ParseIP(host)
 	if len(keys) == 0 && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
@@ -101,7 +156,7 @@ func run() error {
 	start := func(ctx context.Context) (*engine.Engine, error) {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
-		return engine.Start(ctx, *engineExe, engineArgs, os.Stderr)
+		return engine.StartWithProcessConfig(ctx, *engineExe, engineArgs, engineLog, processConfig)
 	}
 	if ctx.Err() != nil {
 		return nil
