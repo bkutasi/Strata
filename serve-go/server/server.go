@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -28,13 +29,20 @@ type Config struct {
 	Model           string
 	Family          requestnorm.Family
 	Tokenizer       *modeltokenizer.Tokenizer
-	Engine          *engine.Engine
+	Engine          Engine
 	Renderer        Renderer
 	APIKeys         []string
 	MaxBody         int64
 	MaxPromptBytes  int
 	MaxOutputTokens int
 	MaxConcurrent   int
+}
+
+// Engine is the native generation service used by the handler.
+type Engine interface {
+	Alive() bool
+	ContextLimit() int
+	GenerateWithOptions(context.Context, []int, int, engine.RequestOptions) (engine.Result, error)
 }
 
 type server struct {
@@ -87,7 +95,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/health" || r.URL.Path == "/api/health" {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "ok", "max_context": s.cfg.Engine.Context, "model": s.cfg.Model,
+			"status": "ok", "max_context": s.cfg.Engine.ContextLimit(), "model": s.cfg.Model,
 			"images": false, "api_key": len(s.cfg.APIKeys) > 0, "image_generation": false,
 			"loaded": s.cfg.Engine.Alive(), "service": "strata",
 		})
@@ -103,7 +111,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.Engine.Alive() {
 			models = append(models, map[string]any{
 				"id": s.cfg.Model, "object": "model", "status": map[string]string{"value": "loaded"},
-				"meta":         map[string]int{"n_ctx": s.cfg.Engine.Context},
+				"meta":         map[string]int{"n_ctx": s.cfg.Engine.ContextLimit()},
 				"architecture": map[string]any{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
 			})
 		}
@@ -307,7 +315,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
-	if len(ids)+opt.max > s.cfg.Engine.Context {
+	if len(ids)+opt.max > s.cfg.Engine.ContextLimit() {
 		fail(w, 400, "invalid_request_error", "prompt and output exceed context")
 		return
 	}

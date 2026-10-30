@@ -25,7 +25,7 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 	switch os.Args[3] {
-	case "engine", "engine-tool", "engine-topk-20", "engine-topk-64", "engine-topk-default":
+	case "engine", "engine-tool", "engine-cancel", "engine-topk-20", "engine-topk-64", "engine-topk-default":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -33,6 +33,13 @@ func TestHelperProcess(t *testing.T) {
 				os.Exit(0)
 			}
 			if strings.HasPrefix(scanner.Text(), "GEN ") {
+				if os.Args[3] == "engine-cancel" {
+					fmt.Println("T 104")
+					if scanner.Scan() && scanner.Text() == "STOP" {
+						fmt.Println("DONE 1 2 1 1 cancel")
+					}
+					continue
+				}
 				expected := map[string]string{
 					"engine-topk-20":      "GEN 32 top_k=20 72,105",
 					"engine-topk-64":      "GEN 32 top_k=64 72,105",
@@ -120,7 +127,22 @@ func setupEngine(t *testing.T, mode string) (http.Handler, *engine.Engine) {
 		defer cancel()
 		_ = eng.Close(ctx)
 	})
-	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok, Engine: eng, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 100, MaxConcurrent: 2})
+	var servingEngine Engine = eng
+	if mode == "engine-cancel" {
+		supervisor, err := engine.Supervise(eng, func(ctx context.Context) (*engine.Engine, error) {
+			return engine.Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "engine"}, io.Discard)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = supervisor.Close(ctx)
+		})
+		servingEngine = supervisor
+	}
+	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok, Engine: servingEngine, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 100, MaxConcurrent: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,6 +219,49 @@ func TestHTTPIntegration(t *testing.T) {
 	status, bodyOut = request(t, ts.Client(), url, body, "secret")
 	if status != 200 || !strings.Contains(bodyOut, `"content":"hello STOPhidden"`) {
 		t.Fatalf("request after stop %d %s", status, bodyOut)
+	}
+}
+
+func TestServerRecoversAfterClientCancellation(t *testing.T) {
+	h, _ := setupEngine(t, "engine-cancel")
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	client := ts.Client()
+	client.Timeout = 5 * time.Second
+	url := ts.URL + "/v1/chat/completions"
+	body := `{"messages":[{"role":"user","content":"Hi"}],"stream":true,"max_tokens":32,` +
+		`"chat_template_kwargs":{"enable_thinking":false}}`
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	gotToken := false
+	for scanner.Scan() {
+		if strings.Contains(scanner.Text(), `"content":"h"`) {
+			gotToken = true
+			break
+		}
+	}
+	if !gotToken {
+		resp.Body.Close()
+		t.Fatalf("no first token: %v", scanner.Err())
+	}
+	cancel()
+	resp.Body.Close()
+	status, raw := request(t, client, url,
+		`{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,"chat_template_kwargs":{"enable_thinking":false}}`,
+		"secret")
+	if status != http.StatusOK || !strings.Contains(raw, `"content":"hello STOPhidden"`) {
+		t.Fatalf("request after disconnect: status %d, body %s", status, raw)
 	}
 }
 

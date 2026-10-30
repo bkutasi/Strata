@@ -13,6 +13,14 @@ native errors may or may not have a trailing DONE, and fatal verification errors
 must not be followed by another request. Callers must start a new engine.
 DONE with a nonfinite finish returns ErrNonfinite and discards the process.
 Startup and shutdown deadlines are supplied by the caller.
+Failed startup waits up to three seconds for the killed child to be reaped;
+`ErrUnreaped` means its exit could not be confirmed.
+
+`Supervise` owns an initial engine and starts a replacement on the next request
+after the child is discarded. It waits for the old child to be reaped and never
+retries an in-flight generation. A restart with a different context limit is
+rejected. If a failed startup returns `ErrUnreaped`, the supervisor closes
+instead of risking a second model process.
 
 `GenerateWithOptions` accepts typed sampling values and an optional synchronous
 token callback. Nil sampling fields use native defaults (including greedy

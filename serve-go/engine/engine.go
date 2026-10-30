@@ -20,6 +20,9 @@ import (
 
 var ErrClosed = errors.New("engine is closed")
 
+// ErrUnreaped means a failed startup's child did not exit after it was killed.
+var ErrUnreaped = errors.New("failed engine startup was not reaped")
+
 // ErrNonfinite means a native generation window contained non-finite logits.
 var ErrNonfinite = errors.New("native engine produced non-finite logits")
 
@@ -67,10 +70,12 @@ func (e *Engine) Alive() bool {
 	}
 }
 
+func (e *Engine) ContextLimit() int { return e.Context }
+
 // Start starts exe with the supplied arguments (which must include --serve for
 // a native engine). stderr is separate from the protocol; nil discards it.
 // ctx bounds startup only.
-func Start(ctx context.Context, exe string, args []string, stderr io.Writer) (*Engine, error) {
+func Start(ctx context.Context, exe string, args []string, stderr io.Writer) (_ *Engine, err error) {
 	cmd := exec.Command(exe, args...)
 	if stderr != nil {
 		cmd.Stderr = stderr
@@ -129,6 +134,19 @@ func Start(ctx context.Context, exe string, args []string, stderr io.Writer) (*E
 		}
 		if !e.closing.Load() {
 			e.abort()
+		}
+	}()
+	defer func() {
+		if err == nil {
+			return
+		}
+		e.abort()
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-e.exited:
+		case <-timer.C:
+			err = errors.Join(err, ErrUnreaped)
 		}
 	}()
 	for {

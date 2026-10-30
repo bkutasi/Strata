@@ -25,6 +25,9 @@ include `--serve` and the model flags. It defaults to listening on loopback;
 an API key is required for non-loopback addresses.
 
 An interrupted generation or engine protocol error discards the engine
-process; this experiment does not restart it. A matched stop string discards
-subsequent output but waits for the engine to finish generating, so a stop
-does not save inference work. No real-model or GPU validation is claimed.
+process. The next request starts it again; the failed request is not retried.
+If a failed startup's child cannot be confirmed stopped, further restarts are
+disabled to avoid loading a second engine.
+A matched stop string discards subsequent output but waits for the engine to
+finish generating, so a stop does not save inference work. No real-model or
+GPU validation is claimed.
