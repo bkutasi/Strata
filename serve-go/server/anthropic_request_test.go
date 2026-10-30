@@ -31,6 +31,8 @@ func TestDecodeAnthropicRequest(t *testing.T) {
 		{"many stop sequences", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop_sequences":["a","b","c","d","e"]}`, false, "", "", 0, false},
 		{"invalid stop sequences", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop_sequences":"halt"}`, false, "stop_sequences", "", 0, false},
 		{"null stop sequences", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop_sequences":null}`, false, "", "", 0, false},
+		{"long stop", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop":"` + strings.Repeat("a", 1025) + `"}`, false, "", strings.Repeat("a", 1025), 0, false},
+		{"empty stops", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop":["","x"]}`, false, "", "x", 0, false},
 		{"thinking budget", `{"model":"model","messages":[{"role":"user","content":"hi"}],"thinking":{"type":"enabled","budget_tokens":12}}`, false, "reasoning budget", "", 0, false},
 		{"top_k integer", `{"model":"model","messages":[{"role":"user","content":"hi"}],"top_k":12}`, false, "", "", 12, false},
 		{"top_k string", `{"model":"model","messages":[{"role":"user","content":"hi"}],"top_k":"12"}`, false, "", "", 12, false},

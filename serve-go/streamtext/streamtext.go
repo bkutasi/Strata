@@ -147,7 +147,10 @@ func (s *StopMatcher) Push(text string) string {
 	for _, stop := range s.stops {
 		// Only rune boundaries can be prefixes of Python strings.
 		for i := range stop {
-			if i > keep && i <= len(buf) && strings.HasSuffix(buf, stop[:i]) {
+			if i > len(buf) {
+				break
+			}
+			if i > keep && strings.HasSuffix(buf, stop[:i]) {
 				keep = i
 			}
 		}

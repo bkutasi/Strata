@@ -72,6 +72,17 @@ func TestHoldingAndTie(t *testing.T) {
 	}
 }
 
+func TestLongStopAcrossChunks(t *testing.T) {
+	stop := strings.Repeat("a", 1025) + "界"
+	m := NewStopMatcher([]string{stop})
+	if got := m.Push("before " + stop[:1025]); got != "before " {
+		t.Fatalf("first chunk = %q", got)
+	}
+	if got := m.Push("界after"); got != "" || m.Hit() != stop {
+		t.Fatalf("final chunk = %q, hit = %q", got, m.Hit())
+	}
+}
+
 func TestFinishAndParserBoundary(t *testing.T) {
 	s := NewStopMatcher([]string{"abc"})
 	var d Decoder

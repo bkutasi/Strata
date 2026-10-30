@@ -7,7 +7,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"strata/engine"
 	"strata/requestnorm"
@@ -36,6 +35,10 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 		return requestnorm.AnthropicResult{}, anthropicOptions{}, errors.New("request must be an object")
 	}
 	o := anthropicOptions{max: s.cfg.MaxOutputTokens}
+	o.stops, err = parseStops(root)
+	if err != nil {
+		return requestnorm.AnthropicResult{}, o, err
+	}
 	var toolChoice requestnorm.Value
 	maxSeen := false
 	for _, f := range root.Fields() {
@@ -69,44 +72,6 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 				return requestnorm.AnthropicResult{}, o, errors.New("stream must be a boolean")
 			}
 		case "stop", "stop_sequences":
-			// Python's stop takes precedence whenever it is non-null.
-			if f.Name == "stop_sequences" {
-				if stop, ok := root.Lookup("stop"); ok && stop.Kind() != requestnorm.Null {
-					continue
-				}
-				if v.Kind() == requestnorm.Null {
-					continue
-				}
-				if v.Kind() != requestnorm.Array {
-					return requestnorm.AnthropicResult{}, o, errors.New("invalid stop_sequences")
-				}
-			}
-			if v.Kind() == requestnorm.Null {
-				continue
-			}
-			if f.Name == "stop" && v.Kind() == requestnorm.String {
-				t, _ := v.Text()
-				o.stops = []string{t}
-			} else if v.Kind() == requestnorm.Array {
-				o.stops = nil
-				for _, item := range v.Items() {
-					t, ok := item.Text()
-					if !ok || item.Kind() != requestnorm.String {
-						return requestnorm.AnthropicResult{}, o, fmt.Errorf("invalid %s", f.Name)
-					}
-					o.stops = append(o.stops, t)
-				}
-			} else {
-				return requestnorm.AnthropicResult{}, o, fmt.Errorf("invalid %s", f.Name)
-			}
-			if f.Name == "stop" && len(o.stops) > 4 {
-				return requestnorm.AnthropicResult{}, o, errors.New("at most four stop strings")
-			}
-			for _, t := range o.stops {
-				if !utf8.ValidString(t) || len(t) > 1024 {
-					return requestnorm.AnthropicResult{}, o, errors.New("invalid stop string")
-				}
-			}
 		case "tool_choice":
 			toolChoice = v
 		case "reasoning_budget_tokens":

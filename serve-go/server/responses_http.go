@@ -17,40 +17,6 @@ import (
 	"strata/streamtext"
 )
 
-func responsesStops(root requestnorm.Value) ([]string, error) {
-	stop, _ := root.Lookup("stop")
-	name := "stop"
-	if stop.Kind() == requestnorm.Null {
-		stop, _ = root.Lookup("stop_sequences")
-		name = "stop_sequences"
-	}
-	if stop.Kind() == requestnorm.Null {
-		return nil, nil
-	}
-	var values []requestnorm.Value
-	if name == "stop" && stop.Kind() == requestnorm.String {
-		values = []requestnorm.Value{stop}
-	} else if stop.Kind() == requestnorm.Array {
-		values = stop.Items()
-	} else {
-		return nil, fmt.Errorf("%s must be a list of strings", name)
-	}
-	if name == "stop" && len(values) > 4 {
-		return nil, errors.New("stop takes at most 4 strings")
-	}
-	var stops []string
-	for _, value := range values {
-		text, ok := value.Text()
-		if !ok || value.Kind() != requestnorm.String {
-			return nil, fmt.Errorf("%s must contain strings", name)
-		}
-		if text != "" {
-			stops = append(stops, text)
-		}
-	}
-	return stops, nil
-}
-
 func failResponsesRequest(w http.ResponseWriter, err error) {
 	var responseErr *responses.Error
 	if !errors.As(err, &responseErr) {
@@ -87,7 +53,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	stops, err := responsesStops(root)
+	stops, err := parseStops(root)
 	if err != nil {
 		failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "stop", Status: 400})
 		return

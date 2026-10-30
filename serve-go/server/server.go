@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"strata.local/httpguard"
 	"strata/engine"
@@ -167,6 +166,10 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	}
 	promptFields := map[string]json.RawMessage{}
 	o := options{max: s.cfg.MaxOutputTokens}
+	o.stops, err = parseStops(root)
+	if err != nil {
+		return requestnorm.Result{}, o, err
+	}
 	var toolChoice requestnorm.Value
 	maxSet := false
 	for _, field := range root.Fields() {
@@ -221,29 +224,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 				o.max = n
 			}
 			maxSet = true
-		case "stop":
-			if v.Kind() == requestnorm.String {
-				t, _ := v.Text()
-				o.stops = []string{t}
-			} else if v.Kind() == requestnorm.Array {
-				for _, item := range v.Items() {
-					t, ok := item.Text()
-					if !ok || item.Kind() != requestnorm.String {
-						return requestnorm.Result{}, o, errors.New("stop must contain strings")
-					}
-					o.stops = append(o.stops, t)
-				}
-			} else {
-				return requestnorm.Result{}, o, errors.New("stop must be a string or array")
-			}
-			if len(o.stops) > 4 {
-				return requestnorm.Result{}, o, errors.New("at most four stop strings")
-			}
-			for _, t := range o.stops {
-				if !utf8.ValidString(t) || len(t) > 1024 {
-					return requestnorm.Result{}, o, errors.New("invalid stop string")
-				}
-			}
+		case "stop", "stop_sequences":
 		case "temperature", "top_p", "min_p", "repetition_penalty", "frequency_penalty", "presence_penalty",
 			"penalty_last_n", "seed", "repeat_penalty", "repeat_last_n":
 			if err := setSampling(&o.sampling, root, field.Name, v); err != nil {

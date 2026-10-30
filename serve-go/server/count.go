@@ -39,27 +39,6 @@ func countSampling(name string, value requestnorm.Value, integer bool) error {
 	return fmt.Errorf("invalid sampling field %q", name)
 }
 
-func countStop(root requestnorm.Value) error {
-	stop, ok := root.Lookup("stop")
-	name := "stop"
-	if !ok || stop.Kind() == requestnorm.Null {
-		stop, ok = root.Lookup("stop_sequences")
-		name = "stop_sequences"
-	}
-	if !ok || stop.Kind() == requestnorm.Null || name == "stop" && stop.Kind() == requestnorm.String {
-		return nil
-	}
-	if stop.Kind() != requestnorm.Array || name == "stop" && len(stop.Items()) > 4 {
-		return fmt.Errorf("invalid %s", name)
-	}
-	for _, item := range stop.Items() {
-		if item.Kind() != requestnorm.String {
-			return fmt.Errorf("invalid %s", name)
-		}
-	}
-	return nil
-}
-
 func (s *server) decodeAnthropicCount(data []byte) (requestnorm.AnthropicResult, error) {
 	root, err := requestnorm.ParseValue(data)
 	if err != nil {
@@ -96,7 +75,7 @@ func (s *server) decodeAnthropicCount(data []byte) (requestnorm.AnthropicResult,
 			return requestnorm.AnthropicResult{}, fmt.Errorf("unsupported request field %q", field.Name)
 		}
 	}
-	if err := countStop(root); err != nil {
+	if _, err := parseStops(root); err != nil {
 		return requestnorm.AnthropicResult{}, err
 	}
 	encoded, err := json.Marshal(fields)
