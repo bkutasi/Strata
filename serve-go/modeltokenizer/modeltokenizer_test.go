@@ -63,6 +63,9 @@ func TestIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if got := tok.VocabularySize(); got != 259 {
+				t.Fatalf("vocabulary size = %d, want 259", got)
+			}
 			got, err := tok.Encode("12ab", false, nil)
 			if err != nil || !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("Encode: %v, %v; want %v", got, err, tc.want)

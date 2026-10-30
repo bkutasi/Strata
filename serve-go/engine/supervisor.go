@@ -35,6 +35,12 @@ func Supervise(initial *Engine, start func(context.Context) (*Engine, error)) (*
 
 func (s *Supervisor) ContextLimit() int { return s.limit }
 
+// SupportsLogitBias reports the last advertised capability until a replacement
+// is started, allowing a bias request to trigger a restart.
+func (s *Supervisor) SupportsLogitBias() bool {
+	return !s.closed.Load() && s.current.Load().SupportsLogitBias()
+}
+
 func (s *Supervisor) Alive() bool {
 	return !s.closed.Load() && s.current.Load().Alive()
 }

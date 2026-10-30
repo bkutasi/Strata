@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,64 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestSupervisorLogitBiasRestartMismatch(t *testing.T) {
+	initial := startFake(t, "bias-gen", &bytes.Buffer{})
+	s, err := Supervise(initial, func(ctx context.Context) (*Engine, error) {
+		return Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "normal"}, io.Discard)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close(testContext(t)) })
+	if !s.SupportsLogitBias() {
+		t.Fatal("initial capability missing")
+	}
+	initial.abort()
+	select {
+	case <-initial.exited:
+	case <-testContext(t).Done():
+		t.Fatal("initial child not reaped")
+	}
+	if !initial.SupportsLogitBias() || !s.SupportsLogitBias() {
+		t.Fatal("lost advertised capability after exit")
+	}
+	_, err = s.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{Sampling: Sampling{LogitBias: map[int]float64{1: 1}}})
+	if err == nil || s.SupportsLogitBias() || !s.Alive() {
+		t.Fatalf("error=%v capability=%v alive=%v", err, s.SupportsLogitBias(), s.Alive())
+	}
+	if _, err := s.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{}); err != nil {
+		t.Fatalf("replacement received rejected command: %v", err)
+	}
+}
+
+func TestSupervisorLogitBiasRestartsSupportedEngine(t *testing.T) {
+	initial := startFake(t, "bias-gen", &bytes.Buffer{})
+	starts := 0
+	s, err := Supervise(initial, func(ctx context.Context) (*Engine, error) {
+		starts++
+		return Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "bias-gen"}, io.Discard)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close(testContext(t)) })
+	initial.abort()
+	select {
+	case <-initial.exited:
+	case <-testContext(t).Done():
+		t.Fatal("initial child not reaped")
+	}
+	if !s.SupportsLogitBias() {
+		t.Fatal("lost advertised capability after exit")
+	}
+	_, err = s.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{
+		Sampling: Sampling{LogitBias: map[int]float64{0: -100, 7: .5, 2147483647: 100}},
+	})
+	if err != nil || starts != 1 || !s.SupportsLogitBias() {
+		t.Fatalf("error=%v starts=%d capability=%v", err, starts, s.SupportsLogitBias())
+	}
+}
 
 func TestSupervisorRestartsOnceAfterCancellation(t *testing.T) {
 	initial, err := Start(testContext(t), os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "callback-cancel"}, io.Discard)

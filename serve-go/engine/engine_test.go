@@ -87,6 +87,18 @@ func TestHelperProcess(t *testing.T) {
 	}
 	fmt.Fprintln(os.Stderr, "child diagnostics")
 	fmt.Println("INFO engine=test context=4096")
+	switch mode {
+	case "bias-gen", "bias-geni", "bias-zero":
+		fmt.Println("INFO logit_bias=1 batch_slots=0")
+	case "bias-absent-slots":
+		fmt.Println("INFO logit_bias=1")
+	case "bias-batch":
+		fmt.Println("INFO logit_bias=1 batch_slots=2")
+	case "bias-malformed":
+		fmt.Println("INFO logit_bias=1 batch_slots=oops")
+	case "bias-disabled":
+		fmt.Println("INFO logit_bias=0")
+	}
 	if mode == "early-no-stop" {
 		fmt.Println("READY 4096")
 	} else {
@@ -125,6 +137,16 @@ func TestHelperProcess(t *testing.T) {
 		if strings.HasPrefix(line, "GEN ") || strings.HasPrefix(line, "GENI ") {
 			requests++
 			switch mode {
+			case "bias-gen", "bias-geni":
+				want := "GEN 3 logit_bias=0:-100,7:0.5,2147483647:100 12,34"
+				if mode == "bias-geni" {
+					want = "GENI 3 logit_bias=0:-100,7:0.5,2147483647:100 /tmp/vision.bin 12,34"
+				}
+				if line != want {
+					fmt.Println("ERR unexpected command")
+					continue
+				}
+				fmt.Println("DONE 0 2 1 2 stop")
 			case "early-stop":
 				if requests == 1 {
 					fmt.Println("T 42")
@@ -215,6 +237,65 @@ func TestHelperProcess(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestLogitBiasTransportAndCapability(t *testing.T) {
+	for _, mode := range []string{"bias-gen", "bias-geni"} {
+		t.Run(mode, func(t *testing.T) {
+			e := startFake(t, mode, &bytes.Buffer{})
+			if !e.SupportsLogitBias() {
+				t.Fatal("expected bias capability")
+			}
+			opts := RequestOptions{Sampling: Sampling{LogitBias: map[int]float64{7: .5, 2147483647: 100, 0: -100}}}
+			if mode == "bias-geni" {
+				opts.EmbeddingsPath = "/tmp/vision.bin"
+			}
+			if _, err := e.GenerateWithOptions(testContext(t), []int{12, 34}, 3, opts); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		mode string
+		want bool
+	}{
+		{"normal", false}, {"bias-disabled", false}, {"bias-batch", false},
+		{"bias-malformed", false}, {"bias-zero", true}, {"bias-absent-slots", true},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			e := startFake(t, tc.mode, &bytes.Buffer{})
+			if got := e.SupportsLogitBias(); got != tc.want {
+				t.Fatalf("capability = %v, want %v", got, tc.want)
+			}
+			if !tc.want {
+				_, err := e.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{Sampling: Sampling{LogitBias: map[int]float64{1: 1}}})
+				if err == nil || !e.Alive() {
+					t.Fatalf("error=%v alive=%v", err, e.Alive())
+				}
+				if _, err := e.Generate(testContext(t), []int{12, 34}, 3); err != nil {
+					t.Fatalf("rejected request wrote to pipe: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestLogitBiasValidationAndDefaults(t *testing.T) {
+	for _, bias := range []map[int]float64{
+		{-1: 0}, {2147483648: 0}, {1: math.NaN()}, {1: math.Inf(1)},
+		{1: math.Inf(-1)}, {1: -100.01}, {1: 100.01},
+	} {
+		e := startFake(t, "bias-gen", &bytes.Buffer{})
+		if _, err := e.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{Sampling: Sampling{LogitBias: bias}}); err == nil || !e.Alive() {
+			t.Fatalf("bias=%v error=%v alive=%v", bias, err, e.Alive())
+		}
+	}
+	for _, bias := range []map[int]float64{nil, {}} {
+		e := startFake(t, "normal", &bytes.Buffer{})
+		if _, err := e.GenerateWithOptions(testContext(t), []int{12, 34}, 3, RequestOptions{Sampling: Sampling{LogitBias: bias}}); err != nil {
+			t.Fatalf("empty bias changed default command: %v", err)
+		}
+	}
 }
 
 func TestGenerationImageCommandAndPathValidation(t *testing.T) {

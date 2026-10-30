@@ -122,6 +122,9 @@ func Load(path string) (*Tokenizer, error) {
 // ControlLiterals returns a copy of the special-token texts.
 func (t *Tokenizer) ControlLiterals() []string { return t.core.ControlLiterals() }
 
+// VocabularySize returns the number of token IDs in the pack.
+func (t *Tokenizer) VocabularySize() int { return t.core.VocabularySize() }
+
 // SpecialIDs returns a copy of the pack's special_ids, preserving its names.
 // Qwen packs use GGUF keys such as tokenizer.ggml.eos_token_id; DeepSeek
 // packs use short names such as eos. Missing metadata yields an empty map.

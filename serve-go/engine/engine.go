@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,6 +76,19 @@ func (e *Engine) Alive() bool {
 }
 
 func (e *Engine) ContextLimit() int { return e.Context }
+
+// SupportsLogitBias reports the last advertised capability, even after exit.
+// Batching does not apply per-request bias.
+func (e *Engine) SupportsLogitBias() bool {
+	if e.Info["logit_bias"] != "1" {
+		return false
+	}
+	if slots, ok := e.Info["batch_slots"]; ok {
+		n, err := strconv.Atoi(slots)
+		return err == nil && n == 0
+	}
+	return true
+}
 
 // Start starts exe with the supplied arguments (which must include --serve for
 // a native engine). stderr is separate from the protocol; nil discards it.
@@ -297,6 +311,7 @@ type Sampling struct {
 	TopK, PenaltyLastN                                   *int
 	RepetitionPenalty, FrequencyPenalty, PresencePenalty *float64
 	Seed                                                 *uint64
+	LogitBias                                            map[int]float64
 }
 
 // RequestOptions configures a text request. OnToken runs synchronously in
@@ -370,6 +385,23 @@ func samplingKeys(s Sampling) (string, error) {
 	}
 	if s.Seed != nil && *s.Seed > 0 {
 		fmt.Fprintf(&keys, " seed=%d", *s.Seed)
+	}
+	if len(s.LogitBias) > 0 {
+		ids := make([]int, 0, len(s.LogitBias))
+		for id, bias := range s.LogitBias {
+			if id < 0 || int64(id) > math.MaxInt32 || math.IsNaN(bias) || math.IsInf(bias, 0) || bias < -100 || bias > 100 {
+				return "", errors.New("invalid logit_bias")
+			}
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
+		keys.WriteString(" logit_bias=")
+		for i, id := range ids {
+			if i > 0 {
+				keys.WriteByte(',')
+			}
+			fmt.Fprintf(&keys, "%d:%s", id, strconv.FormatFloat(s.LogitBias[id], 'g', -1, 64))
+		}
 	}
 	return keys.String(), nil
 }
@@ -452,6 +484,9 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	case <-e.exited:
 		return result, ErrClosed
 	default:
+	}
+	if len(opts.Sampling.LogitBias) > 0 && !e.SupportsLogitBias() {
+		return result, errors.New("native engine does not support logit_bias without batching")
 	}
 	e.idle.Store(false)
 	if err := e.writeCommand(ctx, command); err != nil {

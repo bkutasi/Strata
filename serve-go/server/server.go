@@ -310,6 +310,17 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "max_tokens", "max_completion_tokens":
 		case "reasoning_budget_tokens", "thinking_budget_tokens":
 		case "stop", "stop_sequences":
+		case "logit_bias":
+			o.sampling.LogitBias, err = parseLogitBias(v, s.cfg.Tokenizer.VocabularySize())
+			if err != nil {
+				return requestnorm.Result{}, o, err
+			}
+			if len(o.sampling.LogitBias) != 0 {
+				capable, ok := s.cfg.Engine.(interface{ SupportsLogitBias() bool })
+				if !ok || !capable.SupportsLogitBias() {
+					return requestnorm.Result{}, o, errors.New("logit_bias: this engine does not support token biases or has continuous batching enabled")
+				}
+			}
 		case "temperature", "top_p", "min_p", "repetition_penalty", "frequency_penalty", "presence_penalty",
 			"penalty_last_n", "seed", "repeat_penalty", "repeat_last_n":
 			if err := setSampling(&o.sampling, root, field.Name, v); err != nil {
