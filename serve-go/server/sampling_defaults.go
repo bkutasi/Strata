@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"strata/engine"
+	"strata/requestnorm"
 )
 
 // ParseSamplingDefaults parses the supported sampling defaults from a config
@@ -46,7 +47,12 @@ func ParseSamplingDefaults(data []byte) (engine.Sampling, error) {
 			continue
 		}
 		if key == "strata_tune" {
-			return out, fmt.Errorf("sampling.%s is unsupported by this server", key)
+			value, err := requestnorm.ParseValue(raw)
+			if err != nil || value.Kind() != requestnorm.Object {
+				return out, errors.New("sampling.strata_tune: expected an object")
+			}
+			setTuning(&out, parseTuning(value, true))
+			continue
 		}
 		if key == "experimental_speed_projection" {
 			var value bool

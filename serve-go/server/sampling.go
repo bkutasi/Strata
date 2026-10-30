@@ -85,6 +85,9 @@ func applySamplingDefaults(s *engine.Sampling, defaults engine.Sampling, root re
 	if !present("experimental_speed_projection") {
 		s.SpeedProjection = defaults.SpeedProjection
 	}
+	if !present("strata_tune") {
+		setTuning(s, defaults)
+	}
 }
 
 func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value requestnorm.Value) error {

@@ -675,6 +675,42 @@ func TestSamplingDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestTuneSamplingTransport(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	for _, tc := range []struct {
+		name string
+		s    Sampling
+		want string
+	}{
+		{"nil defaults", Sampling{}, ""},
+		{"native keys and zero values", Sampling{
+			TunePCIEFrac: f(0), TuneSpecMinP: f(0.25), TunePrefillPipe: f(262144),
+		}, " pcie_frac=0 spec_min_p=0.25 pipe=262144"},
+		{"aux CPUs disabled", Sampling{TuneAuxCPUs: boolPointer(false)}, " aux_cpus=0"},
+		{"aux CPUs enabled", Sampling{TuneAuxCPUs: boolPointer(true)}, " aux_cpus=1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := samplingKeys(tc.s)
+			if err != nil || got != tc.want {
+				t.Fatalf("sampling keys = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+	for _, s := range []Sampling{
+		{TunePCIEFrac: f(-0.01)}, {TunePCIEFrac: f(1.01)},
+		{TuneSpecMinP: f(-0.01)}, {TuneSpecMinP: f(1.01)},
+		{TunePrefillPipe: f(-0.01)}, {TunePrefillPipe: f(262144.01)},
+		{TunePCIEFrac: f(math.NaN())}, {TuneSpecMinP: f(math.Inf(1))},
+		{TunePrefillPipe: f(math.Inf(-1))},
+	} {
+		if _, err := samplingKeys(s); err == nil {
+			t.Fatalf("accepted invalid tune sampling: %#v", s)
+		}
+	}
+}
+
+func boolPointer(v bool) *bool { return &v }
+
 func TestCallbackFailureAndCancellation(t *testing.T) {
 	for _, mode := range []string{"callback-error", "callback-cancel"} {
 		t.Run(mode, func(t *testing.T) {

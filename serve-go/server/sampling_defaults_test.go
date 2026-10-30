@@ -87,7 +87,7 @@ func TestParseSamplingDefaultsInvalid(t *testing.T) {
 		`{"presence_penalty":-1}`, `{"penalty_last_n":-1}`,
 		`{"penalty_last_n":2147483648}`, `{"penalty_last_n":2.5}`,
 		`{"seed":0}`, `{"seed":-1}`, `{"seed":1.5}`, `{"seed":18446744073709551616}`,
-		`{"strata_tune":{}}`, `{"experimental_speed_projection":0}`, `{"experimental_speed_projection":"false"}`,
+		`{"strata_tune":"bad"}`, `{"experimental_speed_projection":0}`, `{"experimental_speed_projection":"false"}`,
 	}
 	for _, data := range tests {
 		t.Run(data, func(t *testing.T) {

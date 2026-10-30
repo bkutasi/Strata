@@ -316,6 +316,8 @@ type Sampling struct {
 	AllowedTokenIDs                                      []int
 	DisableCheckpoint                                    bool
 	SpeedProjection                                      *bool
+	TunePCIEFrac, TuneSpecMinP, TunePrefillPipe          *float64
+	TuneAuxCPUs                                          *bool
 }
 
 // Logprob describes the sampled token and the ordered native alternatives.
@@ -374,6 +376,19 @@ func samplingKeys(s Sampling) (string, error) {
 	if err := addFloat("min_p", s.MinP, 0, 1, positive); err != nil {
 		return "", err
 	}
+	for _, tune := range []struct {
+		key   string
+		value *float64
+		max   float64
+	}{
+		{"pcie_frac", s.TunePCIEFrac, 1},
+		{"spec_min_p", s.TuneSpecMinP, 1},
+		{"pipe", s.TunePrefillPipe, 262144},
+	} {
+		if err := addFloat(tune.key, tune.value, 0, tune.max, func(float64) bool { return true }); err != nil {
+			return "", err
+		}
+	}
 	penalty := false
 	for _, p := range []struct {
 		name  string
@@ -411,6 +426,13 @@ func samplingKeys(s Sampling) (string, error) {
 			keys.WriteString(" cvec=1")
 		} else {
 			keys.WriteString(" cvec=0")
+		}
+	}
+	if s.TuneAuxCPUs != nil {
+		if *s.TuneAuxCPUs {
+			keys.WriteString(" aux_cpus=1")
+		} else {
+			keys.WriteString(" aux_cpus=0")
 		}
 	}
 	if s.Logprobs != nil {

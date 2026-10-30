@@ -319,6 +319,8 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "strata_checkpoint":
 			value, ok := v.Bool()
 			o.sampling.DisableCheckpoint = ok && !value
+		case "strata_tune":
+			setTuning(&o.sampling, parseTuning(v, false))
 		case "experimental_speed_projection":
 			if value, ok := v.Bool(); ok {
 				o.sampling.SpeedProjection = &value

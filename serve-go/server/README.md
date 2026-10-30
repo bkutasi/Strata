@@ -101,8 +101,9 @@ Output limits are shortened to fit the context by default. Set
 `"fit_max_tokens": false` to reject an explicit positive output limit that
 exceeds the remaining context; omitted, zero and negative limits still use
 the available context, subject to `MaxOutputTokens`.
-The `strata_tune` sampling default is not supported. Other config fields are
-rejected rather than silently ignored.
+`strata_tune` accepts Python's existing per-request engine tuning keys; its
+config default accepts `pcie_frac`, `spec_min_p`, and `aux_cpus`.
+Other config fields are rejected rather than silently ignored.
 `--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.
