@@ -141,6 +141,21 @@ func TestResponsesStoreTrueRemainsStateless(t *testing.T) {
 	}
 }
 
+func TestResponsesErrorIncludesParameterAndCode(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	w := responsesRequest(h, "/v1/responses", `{"input":"hello","previous_response_id":"old"}`, "secret")
+	var body struct {
+		Error struct {
+			Param string `json:"param"`
+			Code  string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusBadRequest ||
+		body.Error.Param != "previous_response_id" || body.Error.Code != "unsupported_parameter" {
+		t.Fatalf("status %d, error %v, body %s", w.Code, err, w.Body.String())
+	}
+}
+
 func TestChatAcceptsClientMetadata(t *testing.T) {
 	h := responsesHandler(t, "hello", "stop", false)
 	body := `{"messages":[{"role":"user","content":"hi"}],"user":"client","metadata":{"key":"value"},"service_tier":"auto","safety_identifier":"id","prompt_cache_key":"cache"}`

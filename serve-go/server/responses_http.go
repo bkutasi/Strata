@@ -16,6 +16,21 @@ import (
 	"strata/responses"
 )
 
+func failResponsesRequest(w http.ResponseWriter, err error) {
+	var responseErr *responses.Error
+	if !errors.As(err, &responseErr) {
+		fail(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	status := responseErr.Status
+	if status == 0 {
+		status = http.StatusBadRequest
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(responseErr.Body())
+}
+
 func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -24,12 +39,12 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	}
 	req, err := responses.Decode(data)
 	if err != nil {
-		fail(w, 400, "invalid_request_error", err.Error())
+		failResponsesRequest(w, err)
 		return
 	}
 	prepared, err := responses.Prepare(req, responses.PrepareOptions{Family: s.cfg.Family})
 	if err != nil {
-		fail(w, 400, "invalid_request_error", err.Error())
+		failResponsesRequest(w, err)
 		return
 	}
 	root, err := requestnorm.ParseValue(data)
