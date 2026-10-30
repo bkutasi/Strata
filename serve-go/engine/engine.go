@@ -331,13 +331,15 @@ type LogprobAlternative struct {
 	Value   float64
 }
 
-// RequestOptions configures a text request. OnToken runs synchronously in
-// protocol order, after the token is appended to Result and before DONE.
+// RequestOptions configures a text request. OnProgress runs synchronously when
+// an active generation receives a native PP record. OnToken runs synchronously
+// in protocol order, after the token is appended to Result and before DONE.
 // OnLogprob runs immediately before OnToken, with nil if no LP was emitted.
 // Callbacks must not call Generate or Close on the same Engine.
 type RequestOptions struct {
 	Sampling       Sampling
 	EmbeddingsPath string
+	OnProgress     func() error
 	OnToken        func(int) error
 	OnLogprob      func(int, *Logprob) error
 }
@@ -785,7 +787,36 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 					}
 				}
 			case "PP", "RESUME", "REUSED":
-				// Progress and cache reuse are intentionally not exposed.
+				if f[0] == "PP" && !stopping && cancelled == nil && ctx.Err() == nil && opts.OnProgress != nil {
+					err := func() error {
+						returned := false
+						defer func() {
+							if !returned {
+								e.abort()
+							}
+						}()
+						err := opts.OnProgress()
+						returned = true
+						return err
+					}()
+					if errors.Is(err, ErrStopGeneration) {
+						stopping = true
+						if e.CanStop {
+							stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+							err = e.writeCommand(stopCtx, "STOP\n")
+							stopCancel()
+							if err != nil {
+								e.abort()
+								return result, err
+							}
+							timer = time.NewTimer(300 * time.Second)
+							cancel = timer.C
+						}
+					} else if err != nil {
+						e.abort()
+						return result, err
+					}
+				}
 			case "LP":
 				if opts.Sampling.Logprobs == nil {
 					e.abort()

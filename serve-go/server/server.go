@@ -661,7 +661,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		if rendered.Thinking {
 			force = opt.force
 		}
-		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, onLogprob, s.repeatStop)
+		pumped, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, force, route, embeddings, onLogprob, streamHeartbeat(w, opt.stream, &started), s.repeatStop)
 	}
 	result, count := pumped.result, pumped.count
 	timings = pumped.timings

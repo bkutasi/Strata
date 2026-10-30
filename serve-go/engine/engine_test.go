@@ -319,6 +319,15 @@ func TestHelperProcess(t *testing.T) {
 				fmt.Println("T 42")
 				fmt.Println("T 43")
 				fmt.Println("DONE 2 1 1 2 length")
+			case "progress-ack":
+				fmt.Println("PP 1 2 1 2")
+				if !s.Scan() || s.Text() != "ACK" {
+					os.Exit(2)
+				}
+				fmt.Println("DONE 0 1 1 2 stop")
+			case "progress-error":
+				fmt.Println("PP 1 2 1 2")
+				_, _ = io.Copy(io.Discard, os.Stdin)
 			case "sampling":
 				if line != "GEN 3 temperature=0.7 top_p=0.9 top_k=64 min_p=0.1 penalty_repeat=1.1 penalty_freq=-0.5 penalty_present=0.2 penalty_last_n=64 seed=123 12,34" {
 					fmt.Println("ERR unexpected command")
@@ -632,6 +641,42 @@ func TestSamplingAndOrderedCallbacks(t *testing.T) {
 	if err != nil || fmt.Sprint(seen) != "[42 43]" || fmt.Sprint(r.Tokens) != "[42 43]" || r.Finish != "stop" {
 		t.Fatalf("result %#v, callbacks %v, error %v", r, seen, err)
 	}
+}
+
+func TestProgressCallbackPipeAndFailure(t *testing.T) {
+	t.Run("acknowledges before DONE", func(t *testing.T) {
+		e := startFake(t, "progress-ack", &bytes.Buffer{})
+		called := false
+		_, err := e.GenerateWithOptions(testContext(t), []int{1}, 1, RequestOptions{
+			OnProgress: func() error {
+				called = true
+				_, err := io.WriteString(e.stdin, "ACK\n")
+				return err
+			},
+		})
+		if err != nil || !called {
+			t.Fatalf("called=%v error=%v", called, err)
+		}
+	})
+
+	t.Run("callback error reaps child", func(t *testing.T) {
+		e := startFake(t, "progress-error", &bytes.Buffer{})
+		failure := errors.New("progress callback failure")
+		_, err := e.GenerateWithOptions(testContext(t), []int{1}, 1, RequestOptions{
+			OnProgress: func() error { return failure },
+		})
+		if !errors.Is(err, failure) {
+			t.Fatalf("error=%v, want %v", err, failure)
+		}
+		select {
+		case <-e.exited:
+			if e.cmd.ProcessState == nil {
+				t.Fatal("child was not reaped")
+			}
+		case <-testContext(t).Done():
+			t.Fatal("progress callback error left child running")
+		}
+	})
 }
 
 func TestSamplingDefaultsAndValidation(t *testing.T) {
