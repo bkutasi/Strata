@@ -45,6 +45,11 @@ An interrupted generation or engine protocol error discards the engine
 process. The next request starts it again; the failed request is not retried.
 If a failed startup's child cannot be confirmed stopped, further restarts are
 disabled to avoid loading a second engine.
-A matched stop string discards subsequent output but waits for the engine to
-finish generating, so a stop does not save inference work. No real-model or
-GPU validation is claimed.
+A matched stop string sends STOP and drains the current request when the engine
+supports it. An older engine without STOP runs to the end of the request.
+
+A short real-model smoke test passed on an RTX 3080 Ti with the Qwen3.8
+IQ3_S pack and a 4,096-token context: text and streaming on all three APIs,
+a chat tool call, and a stop followed by another request. The Python server
+matched the text, tool-call arguments and stop result on those prompts. This
+does not verify the missing features above or full parity.
