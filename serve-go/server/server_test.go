@@ -25,7 +25,7 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 	switch os.Args[3] {
-	case "engine", "engine-tool":
+	case "engine", "engine-tool", "engine-topk-20", "engine-topk-64", "engine-topk-default":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -33,6 +33,15 @@ func TestHelperProcess(t *testing.T) {
 				os.Exit(0)
 			}
 			if strings.HasPrefix(scanner.Text(), "GEN ") {
+				expected := map[string]string{
+					"engine-topk-20":      "GEN 32 top_k=20 72,105",
+					"engine-topk-64":      "GEN 32 top_k=64 72,105",
+					"engine-topk-default": "GEN 32 72,105",
+				}
+				if want, ok := expected[os.Args[3]]; ok && scanner.Text() != want {
+					fmt.Println("ERR unexpected top_k")
+					continue
+				}
 				text := "hello STOPhidden"
 				if os.Args[3] == "engine-tool" {
 					text = "<tool_call><function=lookup><parameter=x>7</parameter></function></tool_call>"
@@ -188,6 +197,42 @@ func TestHTTPIntegration(t *testing.T) {
 	status, bodyOut = request(t, ts.Client(), url, body, "secret")
 	if status != 200 || !strings.Contains(bodyOut, `"content":"hello STOPhidden"`) {
 		t.Fatalf("request after stop %d %s", status, bodyOut)
+	}
+}
+
+func TestHTTPTopKReachesEngine(t *testing.T) {
+	for _, tc := range []struct {
+		name, value, engine string
+		status              int
+	}{
+		{"integer", "20", "engine-topk-20", 200},
+		{"numeric string", `"20.0"`, "engine-topk-20", 200},
+		{"clamped", "128", "engine-topk-64", 200},
+		{"large integer", "999999999999999999999999999999", "engine-topk-64", 200},
+		{"zero", "0", "engine-topk-64", 200},
+		{"negative", "-1", "engine-topk-default", 200},
+		{"large negative integer", "-999999999999999999999999999999", "engine-topk-default", 200},
+		{"null", "null", "engine-topk-default", 200},
+		{"float", "20.0", "engine-topk-default", 400},
+		{"boolean", "true", "engine-topk-default", 400},
+		{"fractional string", `"20.1"`, "engine-topk-default", 400},
+		{"hexadecimal string", `"0x1p2"`, "engine-topk-default", 400},
+		{"nonfinite string", `"Infinity"`, "engine-topk-default", 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := setupEngine(t, tc.engine)
+			ts := httptest.NewServer(h)
+			defer ts.Close()
+			body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":32,` +
+				`"chat_template_kwargs":{"enable_thinking":false},"top_k":` + tc.value + `}`
+			status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+			if status != tc.status {
+				t.Fatalf("status %d, want %d: %s", status, tc.status, raw)
+			}
+			if status == 200 && !strings.Contains(raw, `"content":"hello STOPhidden"`) {
+				t.Fatalf("response %s", raw)
+			}
+		})
 	}
 }
 

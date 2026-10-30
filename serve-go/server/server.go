@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -212,6 +213,44 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 				}
 				o.sampling.TopP = &f
 			}
+		case "top_k":
+			if v.Kind() == requestnorm.Null {
+				continue
+			}
+			var k int
+			if text, ok := v.Integer(); ok {
+				n, err := strconv.ParseInt(text, 10, 64)
+				if err != nil {
+					if strings.HasPrefix(text, "-") {
+						continue
+					}
+					k = 64
+				} else if n < 0 {
+					continue
+				} else if n == 0 || n > 64 {
+					k = 64
+				} else {
+					k = int(n)
+				}
+			} else if text, ok := v.Text(); ok && v.Kind() == requestnorm.String {
+				text = strings.TrimSpace(text)
+				n, err := strconv.ParseFloat(text, 64)
+				if err != nil || math.IsInf(n, 0) || math.IsNaN(n) || math.Trunc(n) != n ||
+					strings.HasPrefix(strings.ToLower(strings.TrimLeft(text, "+-")), "0x") {
+					return requestnorm.Result{}, o, errors.New("top_k must be an integer")
+				}
+				if n < 0 {
+					continue
+				}
+				if n == 0 || n > 64 {
+					k = 64
+				} else {
+					k = int(n)
+				}
+			} else {
+				return requestnorm.Result{}, o, errors.New("top_k must be an integer")
+			}
+			o.sampling.TopK = &k
 		default:
 			return requestnorm.Result{}, o, fmt.Errorf("unsupported request field %q", field.Name)
 		}
