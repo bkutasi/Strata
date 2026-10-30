@@ -31,8 +31,8 @@ func TestReasoningBudgetRequestCompatibility(t *testing.T) {
 			{`"reasoning_budget_tokens":0,"thinking_budget_tokens":"ignored"`, true, http.StatusOK},
 			{`"reasoning_budget_tokens":12`, false, http.StatusOK},
 			{`"thinking_budget_tokens":12`, false, http.StatusOK},
-			{`"reasoning_budget_tokens":12`, true, http.StatusBadRequest},
-			{`"reasoning_budget_tokens":null,"thinking_budget_tokens":12`, true, http.StatusBadRequest},
+			{`"reasoning_budget_tokens":12`, true, http.StatusOK},
+			{`"reasoning_budget_tokens":null,"thinking_budget_tokens":12`, true, http.StatusOK},
 			{`"reasoning_budget_tokens":1.5`, false, http.StatusBadRequest},
 			{`"reasoning_budget_tokens":true`, false, http.StatusBadRequest},
 			{`"reasoning_budget_tokens":"0"`, false, http.StatusBadRequest},
@@ -61,9 +61,9 @@ func TestAnthropicThinkingBudgetPrecedence(t *testing.T) {
 		fields string
 		status int
 	}{
-		{`"thinking":{"type":"enabled","budget_tokens":12}`, http.StatusBadRequest},
+		{`"thinking":{"type":"enabled","budget_tokens":12}`, http.StatusOK},
 		{`"thinking":{"type":"enabled","budget_tokens":12},"reasoning_budget_tokens":0`, http.StatusOK},
-		{`"thinking":{"type":"enabled","budget_tokens":12},"thinking_budget_tokens":0`, http.StatusBadRequest},
+		{`"thinking":{"type":"enabled","budget_tokens":12},"thinking_budget_tokens":0`, http.StatusOK},
 		{`"thinking":{"type":"disabled","budget_tokens":12}`, http.StatusOK},
 	} {
 		body := `{"messages":[{"role":"user","content":"Hi"}],` + tc.fields + `}`

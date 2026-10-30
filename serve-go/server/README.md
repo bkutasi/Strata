@@ -20,9 +20,10 @@ Non-finite generated tool arguments fail the response. Tool
 argument object keys may be reordered by the parser.
 The APIs support `auto` and `none` tool choices. Chat and Anthropic requests
 also support forced or named choices when thinking is disabled; forced choices
-with thinking and positive reasoning budgets while thinking are not supported.
-A zero or negative reasoning budget disables the limit; positive budgets are
-accepted when thinking is disabled. As in the
+with thinking are not supported. A positive request reasoning budget closes
+thinking and continues the answer; zero or negative disables the limit.
+Python's automatic answer-room and configured default budgets are not yet
+implemented. As in the
 Python Responses route, Responses `tool_choice: none` removes tools; other
 choices are accepted but do not force a tool. Incomplete tool calls are not
 streamed. All APIs reject images and use the renderer limits below. Other

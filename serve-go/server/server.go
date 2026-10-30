@@ -155,7 +155,7 @@ type options struct {
 	structured bool
 	repair     bool
 	schema     *outputSchema
-	budget     bool
+	budget     int
 }
 
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
@@ -370,10 +370,6 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "server_error", "renderer failed")
 		return
 	}
-	if err = rejectActiveReasoningBudget(opt.budget, rendered.Thinking); err != nil {
-		fail(w, 400, "invalid_request_error", err.Error())
-		return
-	}
 	if len(rendered.Prompt) > s.cfg.MaxPromptBytes {
 		fail(w, 400, "invalid_request_error", "prompt too large")
 		return
@@ -516,7 +512,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	err = route(opening)
 	var pumped generationResult
 	if err == nil {
-		pumped, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+		pumped, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, route)
 	}
 	result, count := pumped.result, pumped.count
 	timings = pumped.timings

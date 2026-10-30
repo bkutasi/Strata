@@ -46,7 +46,7 @@ func TestGenerateStopTokenAndStopString(t *testing.T) {
 	tok, _ := syntheticTokenizer(t)
 	parser := &pumpParser{}
 	var got string
-	out, err := generate(context.Background(), pumpEngine{tokens: []int{'a', 257, 'b'}}, tok, parser, []int{1}, 8, engine.Sampling{}, map[int]bool{257: true}, func(events []outputparser.Event) error {
+	out, err := generate(context.Background(), pumpEngine{tokens: []int{'a', 257, 'b'}}, tok, parser, []int{1}, 8, engine.Sampling{}, map[int]bool{257: true}, 0, func(events []outputparser.Event) error {
 		for _, event := range events {
 			got += event.Text
 		}
@@ -58,7 +58,7 @@ func TestGenerateStopTokenAndStopString(t *testing.T) {
 
 	parser = &pumpParser{}
 	got = ""
-	out, err = generate(context.Background(), pumpEngine{tokens: []int{'x', '!', 'y'}}, tok, parser, []int{1}, 8, engine.Sampling{}, nil, func(events []outputparser.Event) error {
+	out, err = generate(context.Background(), pumpEngine{tokens: []int{'x', '!', 'y'}}, tok, parser, []int{1}, 8, engine.Sampling{}, nil, 0, func(events []outputparser.Event) error {
 		for _, event := range events {
 			got += event.Text
 			if event.Text == "!" {
@@ -85,7 +85,7 @@ func TestGenerateEarlyStopFinishesParserAsStop(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parser := &pumpParser{}
-			_, err := generate(context.Background(), pumpEngine{tokens: tc.tokens, finish: "length"}, tok, parser, []int{1}, 8, engine.Sampling{}, tc.stopIDs, func(events []outputparser.Event) error {
+			_, err := generate(context.Background(), pumpEngine{tokens: tc.tokens, finish: "length"}, tok, parser, []int{1}, 8, engine.Sampling{}, tc.stopIDs, 0, func(events []outputparser.Event) error {
 				if tc.stopEvent && len(events) > 0 {
 					return stopGeneration
 				}
@@ -101,13 +101,13 @@ func TestGenerateEarlyStopFinishesParserAsStop(t *testing.T) {
 func TestGeneratePropagatesParserAndEngineErrors(t *testing.T) {
 	tok, _ := syntheticTokenizer(t)
 	want := errors.New("callback failed")
-	_, err := generate(context.Background(), pumpEngine{tokens: []int{'a'}}, tok, &pumpParser{}, []int{1}, 8, engine.Sampling{}, nil, func([]outputparser.Event) error { return want })
+	_, err := generate(context.Background(), pumpEngine{tokens: []int{'a'}}, tok, &pumpParser{}, []int{1}, 8, engine.Sampling{}, nil, 0, func([]outputparser.Event) error { return want })
 	if !errors.Is(err, want) {
 		t.Fatalf("callback error = %v, want %v", err, want)
 	}
 
 	engineErr := errors.New("engine failed")
-	out, err := generate(context.Background(), pumpEngine{tokens: []int{'a'}, err: engineErr}, tok, &pumpParser{}, []int{1}, 8, engine.Sampling{}, nil, func([]outputparser.Event) error { return nil })
+	out, err := generate(context.Background(), pumpEngine{tokens: []int{'a'}, err: engineErr}, tok, &pumpParser{}, []int{1}, 8, engine.Sampling{}, nil, 0, func([]outputparser.Event) error { return nil })
 	if !errors.Is(err, engineErr) || out.count != 1 {
 		t.Fatalf("engine error: out=%+v err=%v", out, err)
 	}

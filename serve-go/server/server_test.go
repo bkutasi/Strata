@@ -91,7 +91,8 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 	vocab["<control>"] = 256
 	vocab["<｜end▁of▁sentence｜>"] = 257
 	vocab["｜DSML｜"] = 258
-	types := make([]int, 259)
+	vocab["ab"] = 259
+	types := make([]int, 260)
 	types[256] = 3
 	types[257] = 3
 	types[258] = 4

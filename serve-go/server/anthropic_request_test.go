@@ -57,7 +57,7 @@ func TestDecodeAnthropicRequest(t *testing.T) {
 			if opt.stream != tt.stream {
 				t.Fatalf("stream = %v, want %v", opt.stream, tt.stream)
 			}
-			if (tt.name == "budget" || tt.name == "thinking budget") && !opt.budget {
+			if (tt.name == "budget" || tt.name == "thinking budget") && opt.budget != 12 {
 				t.Fatal("positive reasoning budget was not retained")
 			}
 			if tt.name == "tool choice required without tools" && opt.force != "" {

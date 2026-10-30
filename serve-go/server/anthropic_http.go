@@ -38,10 +38,6 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "server_error", "renderer failed")
 		return
 	}
-	if err = rejectActiveReasoningBudget(opt.budget, rendered.Thinking); err != nil {
-		fail(w, 400, "invalid_request_error", err.Error())
-		return
-	}
 	ids, err := s.cfg.Tokenizer.EncodeWithBudget(rendered.Prompt, true, rendered.Plain, s.cfg.MaxPromptBytes)
 	if err != nil || len(ids) == 0 {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
@@ -167,7 +163,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 	err = route(opening)
 	var result generationResult
 	if err == nil {
-		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, opt.budget, route)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

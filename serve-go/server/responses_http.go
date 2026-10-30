@@ -127,10 +127,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "server_error", "renderer failed")
 		return
 	}
-	if err = rejectActiveReasoningBudget(o.budget, rendered.Thinking); err != nil {
-		failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "reasoning_budget_tokens", Status: 400})
-		return
-	}
 	if len(rendered.Prompt) > s.cfg.MaxPromptBytes {
 		fail(w, 400, "invalid_request_error", "prompt too large")
 		return
@@ -283,7 +279,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	}
 	var result generationResult
 	if err == nil {
-		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, route)
+		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, route)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {

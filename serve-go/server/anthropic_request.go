@@ -21,7 +21,7 @@ type anthropicOptions struct {
 	max      int
 	stops    []string
 	sampling engine.Sampling
-	budget   bool
+	budget   int
 }
 
 // decodeAnthropicRequest strictly decodes a supported Messages generation
