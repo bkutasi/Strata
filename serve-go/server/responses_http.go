@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"strata/outputparser"
 	"strata/requestnorm"
@@ -211,6 +212,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	}
 	started := false
 	var final any
+	lastEvent := time.Now()
 	send := func(events []responses.Event) error {
 		for _, event := range events {
 			if response, ok := event["response"]; ok && (event["type"] == "response.completed" || event["type"] == "response.incomplete") {
@@ -241,6 +243,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			if e = http.NewResponseController(w).Flush(); e != nil {
 				return e
 			}
+			lastEvent = time.Now()
 		}
 		return nil
 	}
@@ -305,7 +308,21 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	}
 	var result generationResult
 	if err == nil {
-		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, nil, streamHeartbeat(w, o.stream, &started), s.repeatStop)
+		progress := streamHeartbeat(w, o.stream, &started)
+		if o.stream {
+			heartbeat := progress
+			progress = func() error {
+				if time.Since(lastEvent) < 15*time.Second {
+					return heartbeat()
+				}
+				event, err := a.InProgress()
+				if err != nil {
+					return err
+				}
+				return send([]responses.Event{event})
+			}
+		}
+		result, err = generateWithEmbeddings(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, o.max, o.sampling, s.stopIDs, o.budget, "", route, embeddings, nil, progress, s.repeatStop)
 	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {
