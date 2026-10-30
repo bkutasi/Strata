@@ -318,6 +318,29 @@ func TestHTTPIntegration(t *testing.T) {
 	}
 }
 
+func TestInferenceRoutesAcceptTrailingSlash(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	for _, tc := range []struct{ path, body string }{
+		{"/v1/chat/completions/", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":32}`},
+		{"/v1/messages/", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":32}`},
+		{"/v1/v1/messages/", `{"messages":[{"role":"user","content":"hi"}],"max_tokens":32}`},
+		{"/v1/messages/count_tokens/", `{"messages":[{"role":"user","content":"hi"}]}`},
+		{"/v1/v1/messages/count_tokens/", `{"messages":[{"role":"user","content":"hi"}]}`},
+		{"/v1/responses/", `{"input":"hi","max_output_tokens":32}`},
+	} {
+		status, body := request(t, ts.Client(), ts.URL+tc.path+"?beta=true", tc.body, "secret")
+		if status != http.StatusOK {
+			t.Errorf("%s: status=%d body=%s", tc.path, status, body)
+		}
+		status, _ = request(t, ts.Client(), ts.URL+tc.path, tc.body, "")
+		if status != http.StatusUnauthorized {
+			t.Errorf("%s without key: status=%d", tc.path, status)
+		}
+	}
+}
+
 func TestAnthropicCountTokens(t *testing.T) {
 	h, _ := setup(t)
 	ts := httptest.NewServer(h)

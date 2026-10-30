@@ -162,14 +162,15 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": models})
 		return
 	}
-	countTokens := r.URL.Path == "/v1/messages/count_tokens" || r.URL.Path == "/v1/v1/messages/count_tokens"
-	messages := r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/v1/messages"
-	responses := r.URL.Path == "/v1/responses"
+	path := strings.TrimSuffix(r.URL.Path, "/")
+	countTokens := path == "/v1/messages/count_tokens" || path == "/v1/v1/messages/count_tokens"
+	messages := path == "/v1/messages" || path == "/v1/v1/messages"
+	responses := path == "/v1/responses"
 	if (responses && s.cfg.DisableResponses) || ((messages || countTokens) && s.cfg.DisableAnthropic) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.URL.Path != "/v1/chat/completions" && !countTokens && !messages && !responses {
+	if path != "/v1/chat/completions" && !countTokens && !messages && !responses {
 		fail(w, http.StatusNotImplemented, "unsupported_endpoint", "endpoint is not implemented")
 		return
 	}
