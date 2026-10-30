@@ -3,8 +3,9 @@
 This is an opt-in experiment, not a replacement for the Python server. It is
 not connected to `strata launch` or the desktop app. It accepts text-only Qwen
 requests at `POST /v1/chat/completions`, with streaming and a limited set of
-request fields, and lists the model at `GET /v1/models`. Other endpoints and
-model families are not implemented.
+request fields, lists the model at `GET /v1/models`, and reports health at
+`GET /health` and `GET /api/health`. Other endpoints and model families are
+not implemented.
 
 Build with Go 1.26.10:
 

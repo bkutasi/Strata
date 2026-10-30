@@ -59,7 +59,7 @@ func New(c Config) (http.Handler, error) {
 			s.stopIDs[special[0]] = true
 		}
 	}
-	guard, err := httpguard.New(httpguard.Config{APIKeys: c.APIKeys, MaxBody: c.MaxBody}, http.HandlerFunc(s.route))
+	guard, err := httpguard.New(httpguard.Config{APIKeys: c.APIKeys, MaxBody: c.MaxBody, AllowHealth: true}, http.HandlerFunc(s.route))
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +83,15 @@ func fail(w http.ResponseWriter, status int, kind, msg string) {
 }
 
 func (s *server) route(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/health" || r.URL.Path == "/api/health" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok", "max_context": s.cfg.Engine.Context, "model": s.cfg.Model,
+			"images": false, "api_key": len(s.cfg.APIKeys) > 0, "image_generation": false,
+			"loaded": s.cfg.Engine.Alive(), "service": "strata",
+		})
+		return
+	}
 	if r.URL.Path == "/v1/models" {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")

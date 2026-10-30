@@ -22,13 +22,14 @@ type Config struct {
 	APIKeys        []string
 	HostNames      []string
 	AllowAnyHost   bool
+	AllowHealth    bool
 	TrustedOrigins []string
 	CORSOrigins    []string
 	MaxBody        int64
 }
 
-// New wraps only /v1/ routes. All other paths are rejected, because management,
-// telemetry-key and web-page policies require separate route-specific guards.
+// New wraps /v1/ routes and, when enabled, the public health GET endpoints.
+// Other paths require separate route-specific guards.
 func New(c Config, next http.Handler) (http.Handler, error) {
 	if next == nil || c.MaxBody < 0 {
 		return nil, errors.New("httpguard: invalid handler or body limit")
@@ -68,16 +69,21 @@ func New(c Config, next http.Handler) (http.Handler, error) {
 			fail(w, 403, "forbidden", "Host is not allowed")
 			return
 		}
-		if !canonicalAPIPath(r) {
+		health := c.AllowHealth && r.Method == http.MethodGet &&
+			(r.URL.Path == "/health" || r.URL.Path == "/api/health") &&
+			r.URL.RawPath == "" && r.URL.EscapedPath() == r.URL.Path
+		if !health && !canonicalAPIPath(r) {
 			fail(w, 404, "not_found", "route is outside the API guard")
 			return
 		}
-		cors(w, r, c.CORSOrigins)
+		if !health {
+			cors(w, r, c.CORSOrigins)
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if len(c.APIKeys) > 0 && !authorized(r, c.APIKeys) {
+		if !health && len(c.APIKeys) > 0 && !authorized(r, c.APIKeys) {
 			fail(w, 401, "authentication_error", "missing or wrong API key")
 			return
 		}

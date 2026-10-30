@@ -107,6 +107,32 @@ func TestKeysHTTP(t *testing.T) {
 	}
 }
 
+func TestPublicHealthIsLimitedToExactGetPaths(t *testing.T) {
+	s := server(t, Config{APIKeys: []string{"secret"}, AllowHealth: true})
+	for _, tc := range []struct {
+		method, target string
+		status         int
+	}{
+		{"GET", "/health", 200},
+		{"GET", "/api/health?probe=1", 200},
+		{"POST", "/health", 404},
+		{"GET", "/health/", 404},
+		{"GET", "/%68ealth", 404},
+		{"GET", "/api/%68ealth", 404},
+		{"GET", "/v1/models", 401},
+	} {
+		status, _ := raw(t, s, tc.method+" "+tc.target+" HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+		if status != tc.status {
+			t.Errorf("%s %s: got %d, want %d", tc.method, tc.target, status, tc.status)
+		}
+	}
+	noKey := server(t, Config{AllowHealth: true})
+	status, _ := raw(t, noKey, "GET /health HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n")
+	if status != http.StatusForbidden {
+		t.Fatalf("health with untrusted Host: got %d", status)
+	}
+}
+
 func TestCanonicalPathBeforeDownstreamNormalization(t *testing.T) {
 	var forwarded atomic.Int32
 	h, err := New(Config{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

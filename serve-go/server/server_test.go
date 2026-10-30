@@ -296,3 +296,43 @@ func TestModelListTracksEngine(t *testing.T) {
 	}
 	check(0)
 }
+
+func TestHealthTracksEngineWithoutAPIKey(t *testing.T) {
+	h, eng := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	check := func(path string, loaded bool) {
+		t.Helper()
+		resp, err := ts.Client().Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Status          string `json:"status"`
+			MaxContext      int    `json:"max_context"`
+			Model           string `json:"model"`
+			Images          bool   `json:"images"`
+			APIKey          bool   `json:"api_key"`
+			ImageGeneration bool   `json:"image_generation"`
+			Loaded          bool   `json:"loaded"`
+			Service         string `json:"service"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK || body.Status != "ok" || body.MaxContext != 4096 ||
+			body.Model != "test" || body.Images || !body.APIKey || body.ImageGeneration ||
+			body.Loaded != loaded || body.Service != "strata" {
+			t.Fatalf("%s: status %d, body %#v", path, resp.StatusCode, body)
+		}
+	}
+	check("/health", true)
+	check("/api/health", true)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := eng.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check("/health", false)
+}
