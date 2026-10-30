@@ -666,6 +666,61 @@ func TestModelListTracksEngine(t *testing.T) {
 	check(0)
 }
 
+func TestModelsAliasRequiresAuthentication(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	for _, tc := range []struct {
+		path string
+		key  string
+		want int
+	}{
+		{"/models", "", http.StatusUnauthorized},
+		{"/models", "secret", http.StatusOK},
+		{"/v1/models", "secret", http.StatusOK},
+		{"/%6dodels", "secret", http.StatusNotFound},
+	} {
+		req, err := http.NewRequest(http.MethodGet, ts.URL+tc.path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.key != "" {
+			req.Header.Set("Authorization", "Bearer "+tc.key)
+		}
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.want == http.StatusOK {
+			var body struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || len(body.Data) != 1 || body.Data[0].ID != "test" {
+				t.Errorf("%s: invalid model list: %+v, %v", tc.path, body, err)
+			}
+		}
+		resp.Body.Close()
+		if resp.StatusCode != tc.want {
+			t.Errorf("%s: got %d, want %d", tc.path, resp.StatusCode, tc.want)
+		}
+	}
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Allow") != "GET" {
+		t.Fatalf("POST /models: status %d, Allow %q", resp.StatusCode, resp.Header.Get("Allow"))
+	}
+}
+
 func TestHealthTracksEngineWithoutAPIKey(t *testing.T) {
 	h, eng := setup(t)
 	ts := httptest.NewServer(h)

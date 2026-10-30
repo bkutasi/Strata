@@ -23,12 +23,13 @@ type Config struct {
 	HostNames      []string
 	AllowAnyHost   bool
 	AllowHealth    bool
+	AllowModels    bool
 	TrustedOrigins []string
 	CORSOrigins    []string
 	MaxBody        int64
 }
 
-// New wraps /v1/ routes and, when enabled, the public health GET endpoints.
+// New wraps /v1/ routes and, when enabled, health and the /models alias.
 // Other paths require separate route-specific guards.
 func New(c Config, next http.Handler) (http.Handler, error) {
 	if next == nil || c.MaxBody < 0 {
@@ -72,7 +73,9 @@ func New(c Config, next http.Handler) (http.Handler, error) {
 		health := c.AllowHealth && r.Method == http.MethodGet &&
 			(r.URL.Path == "/health" || r.URL.Path == "/api/health") &&
 			r.URL.RawPath == "" && r.URL.EscapedPath() == r.URL.Path
-		if !health && !canonicalAPIPath(r) {
+		models := c.AllowModels && r.URL.Path == "/models" &&
+			r.URL.RawPath == "" && r.URL.EscapedPath() == r.URL.Path
+		if !health && !models && !canonicalAPIPath(r) {
 			fail(w, 404, "not_found", "route is outside the API guard")
 			return
 		}

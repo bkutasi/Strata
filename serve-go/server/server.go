@@ -72,7 +72,7 @@ func New(c Config) (http.Handler, error) {
 			s.stopIDs[special[0]] = true
 		}
 	}
-	guard, err := httpguard.New(httpguard.Config{APIKeys: c.APIKeys, MaxBody: c.MaxBody, AllowHealth: true}, http.HandlerFunc(s.route))
+	guard, err := httpguard.New(httpguard.Config{APIKeys: c.APIKeys, MaxBody: c.MaxBody, AllowHealth: true, AllowModels: true}, http.HandlerFunc(s.route))
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if r.URL.Path == "/v1/models" {
+	if r.URL.Path == "/v1/models" || r.URL.Path == "/models" {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
 			fail(w, http.StatusMethodNotAllowed, "invalid_request_error", "GET required")

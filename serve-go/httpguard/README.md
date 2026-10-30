@@ -2,7 +2,8 @@
 
 This standalone package is an incremental component, not a running server or a
 complete Strata security boundary. Wrap an API handler with `New(Config, handler)`.
-Only canonical `/v1/` paths are forwarded; other paths are rejected. Paths must
+Only canonical `/v1/` paths are forwarded by default. `AllowModels` also admits
+the exact `/models` alias under the same authentication rules. Paths must
 use unescaped ASCII letters, digits, `/`, `-`, `.`, `_` or `~`, without dot
 segments or repeated slashes. A single trailing slash is permitted. Escaped
 characters, backslashes and semicolon path parameters are rejected, even when

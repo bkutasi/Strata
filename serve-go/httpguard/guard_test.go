@@ -133,6 +133,35 @@ func TestPublicHealthIsLimitedToExactGetPaths(t *testing.T) {
 	}
 }
 
+func TestModelsAliasGuard(t *testing.T) {
+	disabled := server(t, Config{APIKeys: []string{"secret"}})
+	status, _ := raw(t, disabled, "GET /models HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\nConnection: close\r\n\r\n")
+	if status != http.StatusNotFound {
+		t.Fatalf("default guard forwarded alias: %d", status)
+	}
+	enabled := server(t, Config{APIKeys: []string{"secret"}, AllowModels: true})
+	for _, tc := range []struct {
+		target, auth string
+		want         int
+	}{
+		{"/models", "", http.StatusUnauthorized},
+		{"/models?x=1", "Authorization: Bearer secret\r\n", http.StatusOK},
+		{"/%6dodels", "Authorization: Bearer secret\r\n", http.StatusNotFound},
+		{"/models/", "Authorization: Bearer secret\r\n", http.StatusNotFound},
+		{"/models/../settings", "Authorization: Bearer secret\r\n", http.StatusNotFound},
+	} {
+		status, _ := raw(t, enabled, "GET "+tc.target+" HTTP/1.1\r\nHost: localhost\r\n"+tc.auth+"Connection: close\r\n\r\n")
+		if status != tc.want {
+			t.Errorf("%s: got %d, want %d", tc.target, status, tc.want)
+		}
+	}
+	noKey := server(t, Config{AllowModels: true})
+	status, _ = raw(t, noKey, "GET /models HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n")
+	if status != http.StatusForbidden {
+		t.Fatalf("alias accepted untrusted Host: %d", status)
+	}
+}
+
 func TestCanonicalPathBeforeDownstreamNormalization(t *testing.T) {
 	var forwarded atomic.Int32
 	h, err := New(Config{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

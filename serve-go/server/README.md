@@ -3,7 +3,8 @@
 This is an opt-in experiment, not a replacement for the Python server. It is
 not connected to `strata launch` or the desktop app. It accepts text-only Qwen
 and DeepSeek V4.1 requests at `POST /v1/chat/completions`, with streaming and a
-limited set of request fields, lists the model at `GET /v1/models`, and reports
+limited set of request fields, lists the model at `GET /v1/models` and
+`GET /models`, and reports
 health at `GET /health` and `GET /api/health`. It also accepts text-only
 Anthropic requests at `POST /v1/messages`, including streaming, and counts
 prompts at `POST /v1/messages/count_tokens` without running generation.
