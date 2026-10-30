@@ -125,3 +125,34 @@ func TestNonPositiveOutputLimitsUseRemainingContext(t *testing.T) {
 		}
 	}
 }
+
+func TestChatMaxCompletionTokensPrecedence(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	eng := &contextEngine{limit: 100}
+	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
+		MaxOutputTokens: 100, MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		fields string
+		want   int
+	}{
+		{`"max_tokens":10,"max_completion_tokens":20`, 20},
+		{`"max_completion_tokens":20,"max_tokens":10`, 20},
+		{`"max_tokens":10,"max_completion_tokens":0`, 10},
+		{`"max_tokens":10,"max_completion_tokens":0.0`, 10},
+		{`"max_tokens":10,"max_completion_tokens":false`, 10},
+		{`"max_tokens":10,"max_completion_tokens":null`, 10},
+		{`"max_tokens":10,"max_completion_tokens":-1`, 90},
+		{`"max_tokens":"ignored","max_completion_tokens":20`, 20},
+	} {
+		eng.requested = 0
+		body := `{"messages":[{"role":"user","content":"hi"}],` + tc.fields + `}`
+		response := responsesRequest(handler, "http://127.0.0.1/v1/chat/completions", body, "")
+		if response.Code != http.StatusOK || eng.requested != tc.want {
+			t.Errorf("%s: status %d, requested %d, want %d: %s", tc.fields, response.Code, eng.requested, tc.want, response.Body)
+		}
+	}
+}

@@ -171,7 +171,39 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		return requestnorm.Result{}, o, err
 	}
 	var toolChoice requestnorm.Value
-	maxSet := false
+	maxValue, _ := root.Lookup("max_completion_tokens")
+	fallback := maxValue.Kind() == requestnorm.Null
+	switch maxValue.Kind() {
+	case requestnorm.Boolean:
+		b, _ := maxValue.Bool()
+		fallback = !b
+	case requestnorm.Number:
+		if integer, ok := maxValue.Integer(); ok {
+			fallback = integer == "0"
+		} else if n, ok := maxValue.Float64(); ok {
+			fallback = n == 0
+		}
+	case requestnorm.String:
+		text, _ := maxValue.Text()
+		fallback = text == ""
+	case requestnorm.Array:
+		fallback = len(maxValue.Items()) == 0
+	case requestnorm.Object:
+		fallback = len(maxValue.Fields()) == 0
+	}
+	if fallback {
+		maxValue, _ = root.Lookup("max_tokens")
+	}
+	if maxValue.Kind() != requestnorm.Null {
+		var n int
+		b, e := maxValue.MarshalJSON()
+		if e != nil || json.Unmarshal(b, &n) != nil || n > s.cfg.MaxOutputTokens {
+			return requestnorm.Result{}, o, errors.New("invalid max tokens")
+		}
+		if n > 0 {
+			o.max = n
+		}
+	}
 	for _, field := range root.Fields() {
 		v := field.Value
 		switch field.Name {
@@ -212,18 +244,6 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 				}
 			}
 		case "max_tokens", "max_completion_tokens":
-			if maxSet {
-				return requestnorm.Result{}, o, errors.New("provide only one max token field")
-			}
-			var n int
-			b, _ := v.MarshalJSON()
-			if json.Unmarshal(b, &n) != nil || n > s.cfg.MaxOutputTokens {
-				return requestnorm.Result{}, o, errors.New("invalid max tokens")
-			}
-			if n > 0 {
-				o.max = n
-			}
-			maxSet = true
 		case "stop", "stop_sequences":
 		case "temperature", "top_p", "min_p", "repetition_penalty", "frequency_penalty", "presence_penalty",
 			"penalty_last_n", "seed", "repeat_penalty", "repeat_last_n":

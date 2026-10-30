@@ -25,6 +25,8 @@ streamed. All APIs reject images and use the renderer limits below. Other
 endpoints and model families are not implemented.
 Chat sampling supports temperature, top-p, top-k, min-p, repetition,
 frequency and presence penalties, penalty window, and seed.
+When Chat supplies both output-token limits, `max_completion_tokens` takes
+precedence unless it is zero or null, as in the Python server.
 Chat, Responses and Anthropic accept `stop` or `stop_sequences`; a non-null
 `stop` takes precedence and is limited to four strings.
 Chat and Responses support JSON-object output, including optional LaTeX escape
