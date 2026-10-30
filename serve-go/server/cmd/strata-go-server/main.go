@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"time"
 
 	"strata/engine"
@@ -98,6 +99,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Release temporary vocabulary and template-loading buffers before serving.
+	debug.FreeOSMemory()
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err

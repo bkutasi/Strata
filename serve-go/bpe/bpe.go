@@ -5,9 +5,11 @@ import (
 	"container/heap"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -19,7 +21,8 @@ type Splitter func(string) []string
 // Span protects literal starts in [Start, End), measured in UTF-8 byte offsets.
 type Span struct{ Start, End int }
 
-type pair struct{ left, right uint32 }
+type rankEntry struct{ right, rank uint32 }
+type mergeEntry struct{ left, right, rank uint32 }
 type literal struct {
 	text    string
 	id, typ int
@@ -28,16 +31,23 @@ type literal struct {
 // Tokenizer is immutable after construction and safe for concurrent use if its
 // supplied Splitter is also safe for concurrent use.
 type Tokenizer struct {
-	tokens   []string
-	special  []bool
-	ids      map[string]uint32
-	ranks    map[pair]uint32
-	literals []literal
-	split    Splitter
+	tokens      string
+	offsets     []int
+	special     []bool
+	ids         []uint32
+	seed        maphash.Seed
+	rankOffsets []uint32
+	ranks       []rankEntry
+	literals    []literal
+	split       Splitter
 }
 
 // VocabularySize returns the number of token IDs.
-func (t *Tokenizer) VocabularySize() int { return len(t.tokens) }
+func (t *Tokenizer) VocabularySize() int { return len(t.offsets) - 1 }
+
+func (t *Tokenizer) token(id int) string {
+	return t.tokens[t.offsets[id]:t.offsets[id+1]]
+}
 
 // ControlLiterals returns a copy of the special-token texts.
 func (t *Tokenizer) ControlLiterals() []string {
@@ -50,6 +60,54 @@ func (t *Tokenizer) ControlLiterals() []string {
 
 var byteChars [256]string
 var charBytes map[rune]byte
+
+// indexCapacity uses a power of two and keeps at least half the slots empty.
+func indexCapacity(n int) (int, error) {
+	maxInt := int(^uint(0) >> 1)
+	if n < 0 || uint64(n) > uint64(^uint32(0)) {
+		return 0, fmt.Errorf("vocabulary count exceeds uint32")
+	}
+	capacity := 1
+	for capacity/2 < n {
+		if capacity > maxInt/2 || capacity*2 > maxInt/4 {
+			return 0, fmt.Errorf("vocabulary index size overflows int")
+		}
+		capacity *= 2
+	}
+	return capacity, nil
+}
+
+// findID returns the matching ID or the empty slot where it can be inserted.
+// Slots store ID+1 so that even an empty token at ID zero is representable.
+func (t *Tokenizer) findID(s string) (uint32, int, bool) {
+	mask := len(t.ids) - 1
+	pos := int(maphash.String(t.seed, s) & uint64(mask))
+	for {
+		entry := t.ids[pos]
+		if entry == 0 {
+			return 0, pos, false
+		}
+		id := entry - 1
+		if t.token(int(id)) == s {
+			return id, pos, true
+		}
+		pos = (pos + 1) & mask
+	}
+}
+
+func (t *Tokenizer) tokenID(s string) (uint32, bool) {
+	id, _, ok := t.findID(s)
+	return id, ok
+}
+
+func (t *Tokenizer) mergeRank(left, right uint32) (uint32, bool) {
+	start, end := int(t.rankOffsets[left]), int(t.rankOffsets[int(left)+1])
+	i := sort.Search(end-start, func(i int) bool { return t.ranks[start+i].right >= right })
+	if i == end-start || t.ranks[start+i].right != right {
+		return 0, false
+	}
+	return t.ranks[start+i].rank, true
+}
 
 func init() {
 	charBytes = make(map[rune]byte, 256)
@@ -77,38 +135,98 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	if uint64(len(tokens)) > uint64(^uint32(0)) || uint64(len(merges)) > uint64(^uint32(0)) {
 		return nil, fmt.Errorf("vocabulary or merge count exceeds uint32")
 	}
-	t := &Tokenizer{tokens: append([]string(nil), tokens...), ids: make(map[string]uint32, len(tokens)), ranks: make(map[pair]uint32, len(merges)), split: split}
+	capacity, err := indexCapacity(len(tokens))
+	if err != nil {
+		return nil, err
+	}
+	maxInt := int(^uint(0) >> 1)
+	if len(tokens) >= maxInt/(strconv.IntSize/8) {
+		return nil, fmt.Errorf("vocabulary offsets size overflows int")
+	}
+	if len(merges) > maxInt/12 {
+		return nil, fmt.Errorf("merge entries size overflows int")
+	}
+	total := 0
+	for _, s := range tokens {
+		if len(s) > maxInt-total {
+			return nil, fmt.Errorf("vocabulary text size overflows int")
+		}
+		total += len(s)
+	}
+	var packed strings.Builder
+	packed.Grow(total)
+	offsets := make([]int, len(tokens)+1)
+	for i, s := range tokens {
+		packed.WriteString(s)
+		offsets[i+1] = packed.Len()
+	}
+	t := &Tokenizer{tokens: packed.String(), offsets: offsets, ids: make([]uint32, capacity), seed: maphash.MakeSeed(), split: split}
 	if len(types) != 0 {
 		t.special = make([]bool, len(types))
 	}
 	for i, s := range tokens {
-		if _, ok := t.ids[s]; ok {
+		_, slot, ok := t.findID(s)
+		if ok {
 			return nil, fmt.Errorf("duplicate token %q", s)
 		}
-		t.ids[s] = uint32(i)
+		t.ids[slot] = uint32(i) + 1
 		if len(types) != 0 && (types[i] == 3 || types[i] == 4) {
 			if s == "" {
 				return nil, fmt.Errorf("empty special token")
 			}
 			t.special[i] = true
-			t.literals = append(t.literals, literal{s, i, types[i]})
+			t.literals = append(t.literals, literal{t.token(i), i, types[i]})
 		}
 	}
 	sort.SliceStable(t.literals, func(i, j int) bool { return len(t.literals[i].text) > len(t.literals[j].text) })
+	entries := make([]mergeEntry, len(merges))
 	for i, rule := range merges {
 		p := strings.Split(rule, " ")
 		if len(p) != 2 {
 			return nil, fmt.Errorf("merge %d is not a pair", i)
 		}
-		left, ok := t.ids[p[0]]
+		left, ok := t.tokenID(p[0])
 		if !ok {
 			return nil, fmt.Errorf("merge %d has unknown left token", i)
 		}
-		right, ok := t.ids[p[1]]
+		right, ok := t.tokenID(p[1])
 		if !ok {
 			return nil, fmt.Errorf("merge %d has unknown right token", i)
 		}
-		t.ranks[pair{left, right}] = uint32(i) // matches the reference's last rank for duplicate pairs
+		entries[i] = mergeEntry{left, right, uint32(i)}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.left != b.left {
+			return a.left < b.left
+		}
+		if a.right != b.right {
+			return a.right < b.right
+		}
+		return a.rank > b.rank
+	})
+	unique := 0
+	for i, entry := range entries {
+		if i == 0 || entry.left != entries[i-1].left || entry.right != entries[i-1].right {
+			unique++
+		}
+	}
+	t.rankOffsets = make([]uint32, len(tokens)+1)
+	t.ranks = make([]rankEntry, 0, unique)
+	group := 0
+	for i, entry := range entries {
+		if i > 0 && entry.left == entries[i-1].left && entry.right == entries[i-1].right {
+			continue
+		}
+		for group < int(entry.left) {
+			group++
+			t.rankOffsets[group] = uint32(len(t.ranks))
+		}
+		t.ranks = append(t.ranks, rankEntry{entry.right, entry.rank})
+	}
+	for group < len(tokens) {
+		group++
+		t.rankOffsets[group] = uint32(len(t.ranks))
 	}
 	return t, nil
 }
@@ -183,10 +301,12 @@ func (t *Tokenizer) encodePiece(piece string) ([]int, error) {
 			return
 		}
 		j := next[i]
-		left, leftOK := t.ids[parts[i]]
-		right, rightOK := t.ids[parts[j]]
-		if r, ok := t.ranks[pair{left, right}]; leftOK && rightOK && ok {
-			heap.Push(h, candidate{int(r), i, j, parts[i], parts[j]})
+		left, leftOK := t.tokenID(parts[i])
+		right, rightOK := t.tokenID(parts[j])
+		if leftOK && rightOK {
+			if r, ok := t.mergeRank(left, right); ok {
+				heap.Push(h, candidate{int(r), i, j, parts[i], parts[j]})
+			}
 		}
 	}
 	for i := 0; i < n-1; i++ {
@@ -209,7 +329,7 @@ func (t *Tokenizer) encodePiece(piece string) ([]int, error) {
 	}
 	out := make([]int, 0, n)
 	for i := 0; i >= 0; i = next[i] {
-		id, ok := t.ids[parts[i]]
+		id, ok := t.tokenID(parts[i])
 		if !ok {
 			return nil, fmt.Errorf("BPE produced token outside vocabulary: %q", parts[i])
 		}
@@ -308,10 +428,10 @@ func (t *Tokenizer) encode(text string, parseSpecial bool, plain []Span) ([]int,
 
 // TokenBytes returns raw token bytes, including literal UTF-8 for special tokens.
 func (t *Tokenizer) TokenBytes(id int) ([]byte, error) {
-	if id < 0 || id >= len(t.tokens) {
+	if id < 0 || id >= t.VocabularySize() {
 		return nil, fmt.Errorf("token id %d out of range", id)
 	}
-	s := t.tokens[id]
+	s := t.token(id)
 	if len(t.special) > 0 && t.special[id] {
 		return []byte(s), nil
 	}

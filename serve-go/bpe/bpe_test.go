@@ -2,6 +2,8 @@ package bpe
 
 import (
 	"encoding/json"
+	"fmt"
+	"hash/maphash"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -13,6 +15,162 @@ import (
 )
 
 func identity(s string) []string { return []string{s} }
+
+func TestMergeRanksGroupedAndDuplicate(t *testing.T) {
+	tokens := []string{"a", "b", "c", "d", "e", "ab", "bc"}
+	merges := []string{"d e", "a d", "a c", "a b", "c a", "b c", "a b", "a a", "d a", "a d"}
+	tok, err := New(tokens, merges, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[[2]uint32]uint32{
+		{3, 4}: 0, {0, 3}: 9, {0, 2}: 2, {0, 1}: 6,
+		{2, 0}: 4, {1, 2}: 5, {0, 0}: 7, {3, 0}: 8,
+	}
+	for left := range tokens {
+		for right := range tokens {
+			rank, ok := tok.mergeRank(uint32(left), uint32(right))
+			expected, exists := want[[2]uint32{uint32(left), uint32(right)}]
+			if ok != exists || ok && rank != expected {
+				t.Fatalf("rank(%d,%d) = %d, %v; want %d, %v", left, right, rank, ok, expected, exists)
+			}
+		}
+	}
+	if len(tok.ranks) != len(want) {
+		t.Fatalf("retained %d ranks, want %d", len(tok.ranks), len(want))
+	}
+	// Last duplicate rank makes "bc" merge before "ab".
+	ids, err := tok.Encode("abc", false, nil)
+	if err != nil || !reflect.DeepEqual(ids, []int{0, 6}) {
+		t.Fatalf("encode = %v, %v; want [0 6]", ids, err)
+	}
+}
+
+func TestVocabularyIndexCollisionsAndEmptyToken(t *testing.T) {
+	// Pigeonhole principle guarantees three collisions among 17 keys.
+	seed := maphash.MakeSeed()
+	var buckets [8][]string
+	var keys []string
+	var bucket uint64
+	for i := 0; i < 17; i++ {
+		s := fmt.Sprintf("collision-%d", i)
+		b := maphash.String(seed, s) & 7
+		buckets[b] = append(buckets[b], s)
+		if len(buckets[b]) == 3 {
+			keys, bucket = buckets[b], b
+			break
+		}
+	}
+	tok, err := New(keys, nil, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok.ids, tok.seed = make([]uint32, 8), seed
+	for i, key := range keys {
+		_, slot, found := tok.findID(key)
+		if found {
+			t.Fatalf("new key %q found", key)
+		}
+		if want := (int(bucket) + i) & 7; slot != want {
+			t.Fatalf("slot %d, want %d", slot, want)
+		}
+		tok.ids[slot] = uint32(i + 1)
+	}
+	for i, key := range keys {
+		if id, ok := tok.tokenID(key); !ok || id != uint32(i) {
+			t.Fatalf("lookup %q = %d, %v", key, id, ok)
+		}
+	}
+	if _, ok := tok.tokenID("missing"); ok {
+		t.Fatal("missing key found")
+	}
+	normal, err := New([]string{"", "a"}, []string{" a"}, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := normal.tokenID(""); !ok || id != 0 {
+		t.Fatalf("empty token lookup = %d, %v", id, ok)
+	}
+	if _, err := New([]string{"", ""}, nil, nil, identity); err == nil {
+		t.Fatal("duplicate empty token accepted")
+	}
+	if _, err := New([]string{""}, nil, []int{3}, identity); err == nil {
+		t.Fatal("empty special token accepted")
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				if id, ok := tok.tokenID(keys[j%len(keys)]); !ok || id != uint32(j%len(keys)) {
+					t.Errorf("concurrent lookup = %d, %v", id, ok)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestPackedVocabularyOwnershipAndBytes(t *testing.T) {
+	tokens := []string{"", "a", string([]byte{0xff, 0xfe}), "<special>"}
+	tok, err := New(tokens, nil, []int{0, 0, 4, 4}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range tokens {
+		tokens[i] = "changed"
+	}
+	want := []string{"", "a", string([]byte{0xff, 0xfe}), "<special>"}
+	for i, s := range want {
+		if id, ok := tok.tokenID(s); !ok || id != uint32(i) || tok.token(i) != s {
+			t.Fatalf("token %d: lookup %d, %v, text %q", i, id, ok, tok.token(i))
+		}
+	}
+	bytes, err := tok.TokenBytes(2)
+	if err != nil || string(bytes) != want[2] {
+		t.Fatalf("invalid UTF-8 token bytes %x, %v", bytes, err)
+	}
+	bytes[0] = 0
+	if again, err := tok.TokenBytes(2); err != nil || string(again) != want[2] {
+		t.Fatalf("token bytes changed: %x, %v", again, err)
+	}
+	ids, err := tok.Encode("<special>", false, nil)
+	if err != nil || !reflect.DeepEqual(ids, []int{3}) {
+		t.Fatalf("special encoding %v, %v", ids, err)
+	}
+	if decoded, err := tok.Decode(ids); err != nil || decoded != "<special>" {
+		t.Fatalf("special decoding %q, %v", decoded, err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				id, ok := tok.tokenID(want[j%len(want)])
+				if !ok || id != uint32(j%len(want)) {
+					t.Errorf("lookup %d, %v", id, ok)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestIndexCapacity(t *testing.T) {
+	for _, tc := range []struct{ n, want int }{{0, 1}, {1, 2}, {2, 4}, {3, 8}, {4, 8}} {
+		got, err := indexCapacity(tc.n)
+		if err != nil || got != tc.want {
+			t.Fatalf("capacity(%d) = %d, %v; want %d", tc.n, got, err, tc.want)
+		}
+	}
+	if _, err := indexCapacity(int(^uint(0) >> 1)); err == nil {
+		t.Fatal("overflowing capacity accepted")
+	}
+}
 
 func synthetic(t *testing.T) *Tokenizer {
 	t.Helper()
