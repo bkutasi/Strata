@@ -120,6 +120,7 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 			return requestnorm.AnthropicResult{}, o, fmt.Errorf("unsupported request field %q", f.Name)
 		}
 	}
+	applySamplingDefaults(&o.sampling, s.cfg.DefaultSampling, root)
 	// The count decoder validates prompt field shapes and normalization; it
 	// cannot be passed an extracted object because it validates sampling too.
 	result, err := s.decodeAnthropicCount(data)

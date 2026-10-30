@@ -54,6 +54,7 @@ func run() error {
 	var configuredKey string
 	var defaultReasoningBudget *int
 	var repeatStopTokens *int
+	var defaultSampling engine.Sampling
 	var anthropicThinkingOnRequest bool
 	var disableAnswerRoom bool
 	if *configPath != "" {
@@ -70,6 +71,12 @@ func run() error {
 			return err
 		}
 		anthropicThinkingOnRequest = cfg.AnthropicThinking == "on_request"
+		if len(cfg.Sampling) > 0 {
+			defaultSampling, err = server.ParseSamplingDefaults(cfg.Sampling)
+			if err != nil {
+				return fmt.Errorf("invalid config sampling: %w", err)
+			}
+		}
 		set := make(map[string]bool)
 		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
 		if (set["engine"] && *engineExe != "strata") || set["engine-arg"] || set["pack"] || set["model"] {
@@ -194,7 +201,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest})
+	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling})
 	if err != nil {
 		return err
 	}

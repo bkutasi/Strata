@@ -39,6 +39,7 @@ type Config struct {
 	DisableAnswerRoom          bool
 	RepeatStopTokens           *int
 	AnthropicThinkingOnRequest bool
+	DefaultSampling            engine.Sampling
 }
 
 // Engine is the native generation service used by the handler.
@@ -312,6 +313,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			return requestnorm.Result{}, o, fmt.Errorf("unsupported request field %q", field.Name)
 		}
 	}
+	applySamplingDefaults(&o.sampling, s.cfg.DefaultSampling, root)
 	b, err := json.Marshal(promptFields)
 	if err != nil {
 		return requestnorm.Result{}, o, err

@@ -76,8 +76,12 @@ For compatibility with the Python command, `--engine strata` can also be
 given with `--config`; the executable still comes from the config.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
 integer `gpu`, string-valued `env`, `log`, `reasoning_budget_tokens`,
-`answer_room`, `repeat_stop_tokens` and `anthropic_thinking`. Other config fields are rejected
-rather than silently ignored. `--api-key` overrides the config key, while
+`answer_room`, `repeat_stop_tokens`, `anthropic_thinking` and the `sampling`
+block for standard sampling parameters. Sampling defaults apply when a request
+omits the field or sets it to null; explicit request values take precedence.
+The `strata_tune` and `experimental_speed_projection` sampling defaults are
+not supported. Other config fields are rejected rather than silently ignored.
+`--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.
 This path has not been validated with every Python config.

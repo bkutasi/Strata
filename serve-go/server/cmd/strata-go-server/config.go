@@ -32,6 +32,7 @@ type standaloneConfig struct {
 	ReasoningBudget   json.RawMessage   `json:"reasoning_budget_tokens"`
 	RepeatStop        json.RawMessage   `json:"repeat_stop_tokens,omitempty"`
 	AnthropicThinking string            `json:"anthropic_thinking,omitempty"`
+	Sampling          json.RawMessage   `json:"sampling,omitempty"`
 }
 
 func (c standaloneConfig) repeatStopConfig() (*int, error) {

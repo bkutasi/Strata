@@ -48,6 +48,42 @@ func samplingInteger(name string, value requestnorm.Value) (*big.Int, error) {
 	return nil, fmt.Errorf("%s must be an integer", name)
 }
 
+func applySamplingDefaults(s *engine.Sampling, defaults engine.Sampling, root requestnorm.Value) {
+	present := func(name string) bool {
+		v, ok := root.Lookup(name)
+		return ok && v.Kind() != requestnorm.Null
+	}
+	if !present("temperature") {
+		s.Temperature = defaults.Temperature
+	}
+	if !present("top_p") {
+		s.TopP = defaults.TopP
+	}
+	if !present("top_k") {
+		s.TopK = defaults.TopK
+	}
+	if !present("min_p") {
+		s.MinP = defaults.MinP
+	}
+	if !present("repetition_penalty") && !present("repeat_penalty") {
+		s.RepetitionPenalty = defaults.RepetitionPenalty
+	}
+	if !present("frequency_penalty") {
+		s.FrequencyPenalty = defaults.FrequencyPenalty
+	}
+	if !present("presence_penalty") {
+		s.PresencePenalty = defaults.PresencePenalty
+	}
+	alias, _ := root.Lookup("repeat_last_n")
+	aliasText, aliasInt := alias.Integer()
+	if !present("penalty_last_n") && !(aliasInt && aliasText != "0" && !strings.HasPrefix(aliasText, "-")) {
+		s.PenaltyLastN = defaults.PenaltyLastN
+	}
+	if !present("seed") {
+		s.Seed = defaults.Seed
+	}
+}
+
 func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value requestnorm.Value) error {
 	if name == "top_k" {
 		n, err := samplingInteger(name, value)

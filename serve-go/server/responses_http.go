@@ -89,6 +89,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	applySamplingDefaults(&o.sampling, s.cfg.DefaultSampling, root)
 	if prepared.Format.Kind() != requestnorm.Null {
 		kind, _ := prepared.Format.Lookup("type")
 		name, _ := kind.Text()
