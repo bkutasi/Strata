@@ -139,6 +139,66 @@ func TestResponsesNumericStringSampling(t *testing.T) {
 	}
 }
 
+func TestResponsesCustomToolCalls(t *testing.T) {
+	for _, tc := range []struct {
+		tool      string
+		modelName string
+		namespace string
+	}{
+		{`{"type":"custom","name":"apply_patch","format":{"type":"grammar","syntax":"lark","definition":"start: \"x\""}}`, "apply_patch", ""},
+		{`{"type":"namespace","name":"fs","tools":[{"type":"custom","name":"apply_patch"}]}`, "fs.apply_patch", "fs"},
+	} {
+		text := `<tool_call><function=` + tc.modelName + `><parameter=input>echo hi</parameter></function></tool_call>`
+		for _, stream := range []string{"false", "true"} {
+			h := responsesHandler(t, text, "stop", false)
+			body := `{"input":"hello","stream":` + stream + `,"tools":[` + tc.tool + `]}`
+			w := responsesRequest(h, "/v1/responses", body, "secret")
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s stream=%s: status %d: %s", tc.modelName, stream, w.Code, w.Body.String())
+			}
+			var response struct {
+				Output []struct {
+					Type      string `json:"type"`
+					Name      string `json:"name"`
+					Namespace string `json:"namespace"`
+					Input     string `json:"input"`
+				} `json:"output"`
+			}
+			if stream == "false" {
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				for _, line := range strings.Split(w.Body.String(), "\n") {
+					if strings.HasPrefix(line, "data: ") {
+						var event struct {
+							Type     string          `json:"type"`
+							Response json.RawMessage `json:"response"`
+						}
+						if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+							t.Fatal(err)
+						}
+						if event.Type == "response.completed" {
+							if err := json.Unmarshal(event.Response, &response); err != nil {
+								t.Fatal(err)
+							}
+						}
+					}
+				}
+				if !strings.Contains(w.Body.String(), "event: response.custom_tool_call_input.delta\n") ||
+					!strings.Contains(w.Body.String(), "event: response.custom_tool_call_input.done\n") {
+					t.Fatalf("missing custom tool stream events: %s", w.Body.String())
+				}
+			}
+			if len(response.Output) != 1 || response.Output[0].Type != "custom_tool_call" ||
+				response.Output[0].Name != "apply_patch" || response.Output[0].Namespace != tc.namespace ||
+				response.Output[0].Input != "echo hi" {
+				t.Fatalf("%s stream=%s: unexpected response: %s", tc.modelName, stream, w.Body.String())
+			}
+		}
+	}
+}
+
 func TestResponsesNumericStringSamplingValidation(t *testing.T) {
 	h := responsesHandler(t, "answer", "stop", false)
 	for _, tc := range []struct {

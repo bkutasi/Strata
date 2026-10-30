@@ -103,12 +103,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		repair, _ := prepared.Format.Lookup("repair_latex_escapes")
 		o.repair, _ = repair.Bool()
 	}
-	for _, name := range prepared.Names {
-		if name.Kind != "function" {
-			fail(w, 400, "invalid_request_error", "only function tools are supported")
-			return
-		}
-	}
 	for _, m := range prepared.Messages {
 		if m.Content.Parts != nil {
 			fail(w, 400, "invalid_request_error", "images are not supported")
