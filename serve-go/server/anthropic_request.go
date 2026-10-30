@@ -18,6 +18,7 @@ import (
 type anthropicOptions struct {
 	stream   bool
 	noTools  bool
+	force    string
 	max      int
 	stops    []string
 	sampling engine.Sampling
@@ -35,6 +36,7 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 		return requestnorm.AnthropicResult{}, anthropicOptions{}, errors.New("request must be an object")
 	}
 	o := anthropicOptions{max: s.cfg.MaxOutputTokens}
+	var toolChoice requestnorm.Value
 	maxSeen := false
 	for _, f := range root.Fields() {
 		v := f.Value
@@ -106,10 +108,7 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 				}
 			}
 		case "tool_choice":
-			o.noTools, err = toolChoiceNone(v)
-			if err != nil {
-				return requestnorm.AnthropicResult{}, o, err
-			}
+			toolChoice = v
 		case "reasoning_budget_tokens":
 			// The prompt normalizer accepts this for count parity, but generation
 			// does not yet apply the budget.
@@ -180,6 +179,8 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 			return requestnorm.AnthropicResult{}, o, errors.New("images are not supported")
 		}
 	}
+	kind, force := normalizeForceChoice(toolChoice, result.Tools, s.cfg.Family)
+	o.noTools, o.force = kind == "none", force
 	if o.noTools {
 		result.Tools = nil
 	}

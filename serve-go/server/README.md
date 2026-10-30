@@ -16,8 +16,10 @@ Codex client metadata is accepted; the optional Codex thread-title and
 compaction-cache behaviors are not implemented.
 Non-finite generated tool arguments fail the response. Tool
 argument object keys may be reordered by the parser.
-The APIs support `auto` and `none` tool choices; forced or named choices and
-Anthropic reasoning budgets are not supported. Incomplete tool calls are not
+The APIs support `auto` and `none` tool choices. Chat and Anthropic requests
+also support forced or named choices when thinking is disabled; forced choices
+with thinking, Responses forced choices, and Anthropic reasoning budgets are
+not supported. Incomplete tool calls are not
 streamed. All APIs reject images and use the renderer limits below. Other
 endpoints and model families are not implemented.
 Chat sampling supports temperature, top-p, top-k, min-p, repetition,
@@ -54,3 +56,5 @@ IQ3_S pack and a 4,096-token context: text and streaming on all three APIs,
 a chat tool call, and a stop followed by another request. The Python server
 matched the text, tool-call arguments and stop result on those prompts. This
 does not verify the missing features above or full parity.
+Forced chat and Anthropic tool calls with thinking disabled also passed a
+short real-Qwen smoke test on the same GPU and context size.

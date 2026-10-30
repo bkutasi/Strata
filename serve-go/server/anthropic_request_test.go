@@ -25,7 +25,7 @@ func TestDecodeAnthropicRequest(t *testing.T) {
 		{"happy", `{"model":"model","max_tokens":20,"messages":[{"role":"user","content":"hi"}],"temperature":0.7}`, false, "", "", 0, false},
 		{"stream", `{"model":"model","max_tokens":20,"stream":true,"messages":[{"role":"user","content":"hi"}]}`, true, "", "", 0, false},
 		{"invalid sampling", `{"model":"model","messages":[{"role":"user","content":"hi"}],"temperature":[]}`, false, "temperature", "", 0, false},
-		{"tool choice required", `{"model":"model","messages":[{"role":"user","content":"hi"}],"tool_choice":{"type":"any"}}`, false, "tool_choice", "", 0, false},
+		{"tool choice required without tools", `{"model":"model","messages":[{"role":"user","content":"hi"}],"tool_choice":{"type":"any"}}`, false, "", "", 0, false},
 		{"budget", `{"model":"model","messages":[{"role":"user","content":"hi"}],"reasoning_budget_tokens":12}`, false, "reasoning budget", "", 0, false},
 		{"stop precedence", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop":["a"],"stop_sequences":["b"]}`, false, "", "a", 0, false},
 		{"many stop sequences", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop_sequences":["a","b","c","d","e"]}`, false, "", "", 0, false},
@@ -54,6 +54,9 @@ func TestDecodeAnthropicRequest(t *testing.T) {
 			}
 			if opt.stream != tt.stream {
 				t.Fatalf("stream = %v, want %v", opt.stream, tt.stream)
+			}
+			if tt.name == "tool choice required without tools" && opt.force != "" {
+				t.Fatalf("force = %q, want automatic choice", opt.force)
 			}
 			if tt.stops != "" && (len(opt.stops) != 1 || opt.stops[0] != tt.stops) {
 				t.Fatalf("stops = %v, want [%s]", opt.stops, tt.stops)

@@ -43,6 +43,11 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
+	ids, err = appendForcedPrompt(s.cfg.Tokenizer, rendered, ids, opt.force, s.cfg.MaxPromptBytes)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
+		return
+	}
 	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
@@ -74,6 +79,14 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
+	}
+	var opening []outputparser.Event
+	if opt.force != "" {
+		opening, err = parser.Feed(opt.force)
+		if err != nil {
+			fail(w, 400, "invalid_request_error", err.Error())
+			return
+		}
 	}
 	var random [12]byte
 	if _, err = rand.Read(random[:]); err != nil {
@@ -147,7 +160,11 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}
-	result, err := generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+	err = route(opening)
+	var result generationResult
+	if err == nil {
+		result, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+	}
 	if err == nil {
 		if text := matcher.Finish(); text != "" {
 			err = feed(outputparser.Event{Kind: "content", Text: text})

@@ -149,6 +149,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 type options struct {
 	stream   bool
 	noTools  bool
+	force    string
 	max      int
 	stops    []string
 	sampling engine.Sampling
@@ -194,6 +195,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	}
 	promptFields := map[string]json.RawMessage{}
 	o := options{max: s.cfg.MaxOutputTokens}
+	var toolChoice requestnorm.Value
 	maxSet := false
 	for _, field := range root.Fields() {
 		v := field.Value
@@ -205,11 +207,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			}
 			promptFields[field.Name] = b
 		case "tool_choice":
-			none, err := toolChoiceNone(v)
-			if err != nil {
-				return requestnorm.Result{}, o, err
-			}
-			o.noTools = none
+			toolChoice = v
 		case "model":
 			m, ok := v.Text()
 			if !ok || v.Kind() != requestnorm.String || m != s.cfg.Model {
@@ -338,6 +336,8 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	if err = requestnorm.RequireMessages(result.Messages); err != nil {
 		return result, o, err
 	}
+	kind, force := normalizeForceChoice(toolChoice, result.Tools, s.cfg.Family)
+	o.noTools, o.force = kind == "none", force
 	if o.noTools {
 		result.Tools = nil
 	}
@@ -384,6 +384,11 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
+	ids, err = appendForcedPrompt(s.cfg.Tokenizer, rendered, ids, opt.force, s.cfg.MaxPromptBytes)
+	if err != nil {
+		fail(w, 400, "invalid_request_error", err.Error())
+		return
+	}
 	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
@@ -415,6 +420,14 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
+	}
+	var opening []outputparser.Event
+	if opt.force != "" {
+		opening, err = parser.Feed(opt.force)
+		if err != nil {
+			fail(w, 400, "invalid_request_error", err.Error())
+			return
+		}
 	}
 	var random [12]byte
 	if _, err = rand.Read(random[:]); err != nil {
@@ -498,7 +511,11 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	pumped, err := generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+	err = route(opening)
+	var pumped generationResult
+	if err == nil {
+		pumped, err = generate(r.Context(), s.cfg.Engine, s.cfg.Tokenizer, parser, ids, opt.max, opt.sampling, s.stopIDs, route)
+	}
 	result, count := pumped.result, pumped.count
 	finish := result.Finish
 	if pumped.stopped {
