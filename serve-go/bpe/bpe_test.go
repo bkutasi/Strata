@@ -190,6 +190,31 @@ func TestPackedVocabularyOwnershipAndBytes(t *testing.T) {
 	wg.Wait()
 }
 
+func TestSpecialTokenBitsAcrossByteBoundaries(t *testing.T) {
+	tokens := []string{"<零>", string(rune(256)), "b", "c", "d", "e", "f", "<七>", "<八>", "g", "h", "i", "j", "k", "l", "<十五>", "<十六>"}
+	types := make([]int, len(tokens))
+	for _, id := range []int{0, 7, 8, 15, 16} {
+		types[id] = 3
+	}
+	tok, err := New(tokens, nil, types, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tok.special) != 3 {
+		t.Fatalf("special-token storage = %d bytes, want 3", len(tok.special))
+	}
+	for id, token := range tokens {
+		got, err := tok.TokenBytes(id)
+		want := token
+		if id == 1 {
+			want = string([]byte{0})
+		}
+		if err != nil || string(got) != want {
+			t.Fatalf("token %d = %q, %v; want %q", id, got, err, want)
+		}
+	}
+}
+
 func TestWideVocabularyOffsets(t *testing.T) {
 	tok, err := New([]string{"", "a", "<special>"}, nil, []int{0, 0, 4}, identity)
 	if err != nil {

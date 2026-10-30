@@ -34,7 +34,7 @@ type Tokenizer struct {
 	tokens       string
 	offsets      []uint32
 	wideOffsets  []int
-	special      []bool
+	special      []byte // one bit per special-token ID
 	ids          []byte // 24-bit ID+1 slots; zero is empty
 	wideIDs      []uint32
 	seed         maphash.Seed
@@ -224,7 +224,7 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		t.wideIDs = make([]uint32, capacity)
 	}
 	if len(types) != 0 {
-		t.special = make([]bool, len(types))
+		t.special = make([]byte, (len(types)+7)/8)
 	}
 	for i, s := range tokens {
 		_, slot, ok := t.findID(s)
@@ -236,7 +236,7 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 			if s == "" {
 				return nil, fmt.Errorf("empty special token")
 			}
-			t.special[i] = true
+			t.special[i/8] |= 1 << (i % 8)
 			t.literals = append(t.literals, literal{t.token(i), i, types[i]})
 		}
 	}
@@ -504,7 +504,7 @@ func (t *Tokenizer) TokenBytes(id int) ([]byte, error) {
 		return nil, fmt.Errorf("token id %d out of range", id)
 	}
 	s := t.token(id)
-	if len(t.special) > 0 && t.special[id] {
+	if len(t.special) > 0 && t.special[id/8]&(1<<(id%8)) != 0 {
 		return []byte(s), nil
 	}
 	b := make([]byte, 0, len(s))
