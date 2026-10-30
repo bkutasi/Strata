@@ -3,10 +3,13 @@ package server
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"strata/requestnorm"
 )
 
 func TestUnknownRequestedModelUsesLoadedModel(t *testing.T) {
@@ -62,5 +65,49 @@ func TestUnknownRequestedModelUsesLoadedModel(t *testing.T) {
 		if status != http.StatusOK || !modelFound {
 			t.Errorf("%s stream: status %d, response %s", api.path, status, raw)
 		}
+	}
+}
+
+func TestAliasModelResponsesAndListing(t *testing.T) {
+	h, _ := setupFamilyEngineWithAliases(t, "engine", requestnorm.FamilyQwen, []string{"test-alias"})
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	for _, api := range []struct {
+		path, body string
+	}{
+		{"/v1/chat/completions", `{"model":"test-alias","messages":[{"role":"user","content":"Hi"}],"chat_template_kwargs":{"enable_thinking":false}}`},
+		{"/v1/messages", `{"model":"test-alias","messages":[{"role":"user","content":"Hi"}],"thinking":{"type":"disabled"}}`},
+		{"/v1/responses", `{"model":"test-alias","input":"Hi","reasoning":{"effort":"none"}}`},
+	} {
+		status, raw := request(t, ts.Client(), ts.URL+api.path, api.body, "secret")
+		var response struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal([]byte(raw), &response); status != http.StatusOK || err != nil || response.Model != "test-alias" {
+			t.Errorf("%s: status %d, response %s, error %v", api.path, status, raw, err)
+		}
+		streamBody := strings.TrimSuffix(api.body, "}") + `,"stream":true}`
+		status, raw = request(t, ts.Client(), ts.URL+api.path, streamBody, "secret")
+		if status != http.StatusOK || !strings.Contains(raw, `"model":"test-alias"`) {
+			t.Errorf("%s stream: status %d, response %s", api.path, status, raw)
+		}
+	}
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	response, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, raw := response.StatusCode, string(body)
+	if status != http.StatusOK || !strings.Contains(raw, `"id":"test-alias"`) || !strings.Contains(raw, `"alias_of":"test"`) {
+		t.Fatalf("alias listing: status %d, response %s", status, raw)
 	}
 }

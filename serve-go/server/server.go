@@ -26,6 +26,7 @@ import (
 
 type Config struct {
 	Model                      string
+	Aliases                    []string
 	Family                     requestnorm.Family
 	Tokenizer                  *modeltokenizer.Tokenizer
 	Engine                     Engine
@@ -63,6 +64,7 @@ func New(c Config) (http.Handler, error) {
 		(c.RepeatStopTokens != nil && *c.RepeatStopTokens < 0) {
 		return nil, errors.New("invalid server configuration")
 	}
+	c.Aliases = normalizeAliases(c.Model, c.Aliases)
 	n, err := requestnorm.NewNormalizer(c.Family)
 	if err != nil {
 		return nil, err
@@ -123,11 +125,24 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		}
 		models := []any{}
 		if s.cfg.Engine.Alive() {
-			models = append(models, map[string]any{
+			model := map[string]any{
 				"id": s.cfg.Model, "object": "model", "status": map[string]string{"value": "loaded"},
 				"meta":         map[string]int{"n_ctx": s.cfg.Engine.ContextLimit()},
 				"architecture": map[string]any{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
-			})
+			}
+			if len(s.cfg.Aliases) > 0 {
+				model["aliases"] = s.cfg.Aliases
+			}
+			models = append(models, model)
+			for _, alias := range s.cfg.Aliases {
+				aliasModel := make(map[string]any, len(model)+1)
+				for key, value := range model {
+					aliasModel[key] = value
+				}
+				aliasModel["id"] = alias
+				aliasModel["alias_of"] = s.cfg.Model
+				models = append(models, aliasModel)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": models})
@@ -387,6 +402,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid body")
 		return
 	}
+	responseModel := s.modelFor(data)
 	input, opt, err := s.decode(data)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
@@ -473,7 +489,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
 			started = true
 		}
-		msg := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": s.cfg.Model, "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+		msg := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": responseModel, "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
 		if usage != nil {
 			msg["usage"] = usage
 			msg["timings"] = timings
@@ -631,5 +647,36 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		msg["tool_calls"] = calls
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": s.cfg.Model, "choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}}, "usage": usage, "timings": timings})
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": created, "model": responseModel, "choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}}, "usage": usage, "timings": timings})
+}
+
+func normalizeAliases(model string, aliases []string) []string {
+	seen := map[string]bool{model: true}
+	out := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		alias = strings.TrimSpace(alias)
+		if alias != "" && !seen[alias] {
+			seen[alias] = true
+			out = append(out, alias)
+		}
+	}
+	return out
+}
+
+func (s *server) modelFor(data []byte) string {
+	root, err := requestnorm.ParseValue(data)
+	if err != nil {
+		return s.cfg.Model
+	}
+	model, ok := root.Lookup("model")
+	if !ok || model.Kind() != requestnorm.String {
+		return s.cfg.Model
+	}
+	name, _ := model.Text()
+	for _, alias := range s.cfg.Aliases {
+		if name == alias {
+			return name
+		}
+	}
+	return s.cfg.Model
 }

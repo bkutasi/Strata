@@ -8,8 +8,11 @@ limited set of request fields, lists the model at `GET /v1/models` and
 health at `GET /health` and `GET /api/health`. It also accepts text-only
 Anthropic requests at `POST /v1/messages`, including streaming, and counts
 prompts at `POST /v1/messages/count_tokens` without running generation.
-As in Python, requests naming another model use the loaded model and report
-its name; model aliases are not supported.
+As in Python, requests naming another model use the loaded model. Configure
+`aliases` in the standalone JSON config as a list of names or one
+comma-separated string. Aliases are trimmed, deduplicated, and listed at
+`/v1/models`; requests naming an alias report that alias, while unknown names
+report the loaded model name.
 It also accepts stateless text-only requests at `POST /v1/responses`, with
 named streaming events, reasoning, stop strings, and completed function and
 custom tool calls. Hosted and unknown tools are left out and a warning is

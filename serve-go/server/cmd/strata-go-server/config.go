@@ -23,6 +23,7 @@ type standaloneConfig struct {
 	Args              []string          `json:"args"`
 	Tokenizer         string            `json:"tokenizer"`
 	Model             string            `json:"model_name"`
+	Aliases           json.RawMessage   `json:"aliases,omitempty"`
 	Host              string            `json:"host"`
 	APIKey            string            `json:"api_key"`
 	GPU               *int              `json:"gpu"`
@@ -34,6 +35,38 @@ type standaloneConfig struct {
 	AnthropicThinking string            `json:"anthropic_thinking,omitempty"`
 	Sampling          json.RawMessage   `json:"sampling,omitempty"`
 	ReasoningEffort   string            `json:"reasoning_effort,omitempty"`
+}
+
+func (c standaloneConfig) aliasesConfig() ([]string, error) {
+	if len(c.Aliases) == 0 || bytes.Equal(bytes.TrimSpace(c.Aliases), []byte("null")) {
+		return nil, nil
+	}
+	var aliases []string
+	var single string
+	if err := json.Unmarshal(c.Aliases, &single); err == nil {
+		aliases = strings.Split(single, ",")
+	} else {
+		var items []json.RawMessage
+		if err := json.Unmarshal(c.Aliases, &items); err != nil {
+			return nil, errors.New("aliases must be a list of model names or a comma-separated string")
+		}
+		for _, item := range items {
+			if bytes.Equal(bytes.TrimSpace(item), []byte("null")) || json.Unmarshal(item, &single) != nil {
+				return nil, errors.New("aliases must be a list of model names or a comma-separated string")
+			}
+			aliases = append(aliases, single)
+		}
+	}
+	seen := map[string]bool{c.Model: true}
+	out := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		alias = strings.TrimSpace(alias)
+		if alias != "" && !seen[alias] {
+			seen[alias] = true
+			out = append(out, alias)
+		}
+	}
+	return out, nil
 }
 
 func (c standaloneConfig) repeatStopConfig() (*int, error) {
@@ -110,6 +143,9 @@ func readStandaloneConfig(path string) (standaloneConfig, error) {
 	}
 	if cfg.Exe == "" || cfg.Tokenizer == "" || cfg.Model == "" {
 		return cfg, errors.New("config requires exe, tokenizer and model_name")
+	}
+	if _, err := cfg.aliasesConfig(); err != nil {
+		return cfg, fmt.Errorf("invalid config: %w", err)
 	}
 	if _, _, err := cfg.thinkingConfig(); err != nil {
 		return cfg, fmt.Errorf("invalid config: %w", err)

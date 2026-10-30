@@ -56,6 +56,7 @@ func run() error {
 	var repeatStopTokens *int
 	var defaultSampling engine.Sampling
 	var defaultReasoningEffort string
+	var aliases []string
 	var anthropicThinkingOnRequest bool
 	var disableAnswerRoom bool
 	if *configPath != "" {
@@ -73,6 +74,10 @@ func run() error {
 		}
 		anthropicThinkingOnRequest = cfg.AnthropicThinking == "on_request"
 		defaultReasoningEffort = cfg.ReasoningEffort
+		aliases, err = cfg.aliasesConfig()
+		if err != nil {
+			return err
+		}
 		if len(cfg.Sampling) > 0 {
 			defaultSampling, err = server.ParseSamplingDefaults(cfg.Sampling)
 			if err != nil {
@@ -203,7 +208,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort})
+	handler, err := server.New(server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort})
 	if err != nil {
 		return err
 	}

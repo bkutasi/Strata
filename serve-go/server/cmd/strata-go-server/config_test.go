@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,38 @@ func TestStandaloneConfig(t *testing.T) {
 		!strings.Contains(strings.Join(env, "\n"), "CUDA_VISIBLE_DEVICES=0") ||
 		!strings.Contains(strings.Join(env, "\n"), "STRATA_TEST_SETTING=value") {
 		t.Fatalf("config or environment incorrect: %+v, %v", cfg, err)
+	}
+}
+
+func TestStandaloneAliasesConfig(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  string
+		ok    bool
+	}{
+		{`[" a ","model","b","a",""]`, `["a","b"]`, true},
+		{`" a, b,a,model,"`, `["a","b"]`, true},
+		{`17`, "", false},
+		{`["a",null]`, "", false},
+		{`["a",1]`, "", false},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		data := `{"exe":"e","tokenizer":"t","model_name":"model","aliases":` + tc.value + `}`
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := readStandaloneConfig(path)
+		if (err == nil) != tc.ok {
+			t.Fatalf("%s: error %v", tc.value, err)
+		}
+		if !tc.ok {
+			continue
+		}
+		aliases, err := cfg.aliasesConfig()
+		encoded, _ := json.Marshal(aliases)
+		if err != nil || string(encoded) != tc.want {
+			t.Errorf("%s: aliases %s, error %v", tc.value, encoded, err)
+		}
 	}
 }
 

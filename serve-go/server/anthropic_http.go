@@ -21,6 +21,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid body")
 		return
 	}
+	responseModel := s.modelFor(data)
 	input, opt, err := s.decodeAnthropicRequest(data)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
@@ -123,7 +124,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}
-	begin, err := adapter.Start("msg_"+hex.EncodeToString(random[:]), s.cfg.Model, len(ids))
+	begin, err := adapter.Start("msg_"+hex.EncodeToString(random[:]), responseModel, len(ids))
 	if err == nil {
 		err = send(begin)
 	}

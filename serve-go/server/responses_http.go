@@ -43,6 +43,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		failResponsesRequest(w, err)
 		return
 	}
+	responseModel := s.modelFor(data)
 	var sharedEffort requestnorm.Value
 	if s.cfg.DefaultReasoningEffort != "" {
 		sharedEffort, err = requestnorm.ParseValue([]byte(strconv.Quote(s.cfg.DefaultReasoningEffort)))
@@ -183,7 +184,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			return out, nil
 		}
 	}
-	a, err := responses.NewAssembler(req, prepared, responses.AssemblerOptions{Model: s.cfg.Model, PromptTokens: int64(len(ids)), Validate: validate})
+	a, err := responses.NewAssembler(req, prepared, responses.AssemblerOptions{Model: responseModel, PromptTokens: int64(len(ids)), Validate: validate})
 	if err != nil {
 		fail(w, 500, "server_error", err.Error())
 		return
