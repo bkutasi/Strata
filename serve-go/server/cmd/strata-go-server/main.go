@@ -59,8 +59,8 @@ func run() error {
 		}
 		set := make(map[string]bool)
 		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
-		if set["engine"] || set["engine-arg"] || set["pack"] || set["model"] {
-			return errors.New("--config cannot be combined with engine, engine-arg, pack or model")
+		if (set["engine"] && *engineExe != "strata") || set["engine-arg"] || set["pack"] || set["model"] {
+			return errors.New("--config accepts only --engine strata and cannot be combined with engine-arg, pack or model")
 		}
 		*engineExe, *pack, *model = cfg.Exe, cfg.Tokenizer, cfg.Model
 		engineArgs = append(args{"--serve"}, cfg.Args...)

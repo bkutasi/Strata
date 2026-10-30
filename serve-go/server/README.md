@@ -54,6 +54,8 @@ V4.1 template; unlike Python, this experiment does not replace older templates.
 
 The server also accepts a limited standalone Python JSON run config:
 `strata-go-server --config /absolute/path/run.json --port 50000 --api-key-env STRATA_API_KEY`.
+For compatibility with the Python command, `--engine strata` can also be
+given with `--config`; the executable still comes from the config.
 It supports `exe`, `cwd`, `args`, `tokenizer`, `model_name`, `host`, `api_key`,
 integer `gpu`, string-valued `env`, and `log`. Other config fields are rejected
 rather than silently ignored. `--api-key` overrides the config key, while
