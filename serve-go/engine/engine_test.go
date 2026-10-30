@@ -330,6 +330,26 @@ func TestHelperProcess(t *testing.T) {
 					os.Exit(2)
 				}
 				fmt.Println("DONE 0 1 1 2 stop")
+			case "busy-ack":
+				ack := make(chan bool, 1)
+				go func() { ack <- s.Scan() && s.Text() == "ACK" }()
+				ticker := time.NewTicker(time.Second)
+				n := 0
+			busy:
+				for {
+					select {
+					case <-ticker.C:
+						fmt.Println("T 42")
+						n++
+					case ok := <-ack:
+						ticker.Stop()
+						if !ok {
+							os.Exit(2)
+						}
+						break busy
+					}
+				}
+				fmt.Printf("DONE %d 1 1 2 stop\n", n)
 			case "progress-error":
 				fmt.Println("PP 1 2 1 2")
 				_, _ = io.Copy(io.Discard, os.Stdin)
@@ -649,6 +669,26 @@ func TestSamplingAndOrderedCallbacks(t *testing.T) {
 }
 
 func TestProgressCallbackPipeAndFailure(t *testing.T) {
+	t.Run("heartbeat while tokens are buffered", func(t *testing.T) {
+		e := startFake(t, "busy-ack", &bytes.Buffer{})
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		seen := 0
+		result, err := e.GenerateWithOptions(ctx, []int{1}, 100, RequestOptions{
+			OnToken: func(int) error {
+				seen++
+				return nil
+			},
+			OnProgress: func() error {
+				_, err := io.WriteString(e.stdin, "ACK\n")
+				return err
+			},
+		})
+		if err != nil || seen == 0 || len(result.Tokens) != seen {
+			t.Fatalf("tokens=%d result=%#v error=%v", seen, result, err)
+		}
+	})
+
 	t.Run("quiet engine sends heartbeat", func(t *testing.T) {
 		e := startFake(t, "quiet-ack", &bytes.Buffer{})
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

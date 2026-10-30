@@ -332,7 +332,7 @@ type LogprobAlternative struct {
 }
 
 // RequestOptions configures a text request. OnProgress runs synchronously while
-// waiting for the engine, for native PP records and while an engine is quiet.
+// waiting for the engine, for native PP records and periodically during generation.
 // OnToken runs synchronously in protocol order, after the token is appended to
 // Result and before DONE.
 // OnLogprob runs immediately before OnToken, with nil if no LP was emitted.
@@ -730,9 +730,6 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 					return result, errors.Join(cancelled, recordError(r))
 				}
 				return result, fmt.Errorf("engine output ended: %w", recordError(r))
-			}
-			if progressTimer != nil {
-				progressTimer.Reset(10 * time.Second)
 			}
 			f := strings.Fields(r.line)
 			if len(f) == 0 {
