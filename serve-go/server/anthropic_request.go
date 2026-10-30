@@ -15,13 +15,14 @@ import (
 // anthropicOptions contains generation controls not used while normalizing a
 // Messages prompt.
 type anthropicOptions struct {
-	stream   bool
-	noTools  bool
-	force    string
-	max      int
-	stops    []string
-	sampling engine.Sampling
-	budget   int
+	stream      bool
+	noTools     bool
+	force       string
+	max         int
+	explicitMax bool
+	stops       []string
+	sampling    engine.Sampling
+	budget      int
 }
 
 // decodeAnthropicRequest strictly decodes a supported Messages generation
@@ -61,6 +62,7 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 			}
 			if n > 0 {
 				o.max = n
+				o.explicitMax = true
 			}
 			maxSeen = true
 		case "stream":

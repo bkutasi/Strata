@@ -47,6 +47,33 @@ func TestStandaloneConfig(t *testing.T) {
 	}
 }
 
+func TestStandaloneFitMaxTokensConfig(t *testing.T) {
+	for _, tc := range []struct {
+		value, want string
+	}{
+		{``, ""},
+		{`true`, "true"},
+		{`false`, "false"},
+		{`null`, "null"},
+		{`"false"`, `"false"`},
+		{`0`, "0"},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		data := `{"exe":"e","tokenizer":"t","model_name":"m"`
+		if tc.value != "" {
+			data += `,"fit_max_tokens":` + tc.value
+		}
+		data += `}`
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := readStandaloneConfig(path)
+		if err != nil || string(cfg.FitMaxTokens) != tc.want {
+			t.Errorf("%s: config %s, error %v", tc.value, cfg.FitMaxTokens, err)
+		}
+	}
+}
+
 func TestStandaloneAliasesConfig(t *testing.T) {
 	for _, tc := range []struct {
 		value string

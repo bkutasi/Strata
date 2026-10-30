@@ -38,6 +38,7 @@ type Config struct {
 	MaxConcurrent              int
 	DefaultReasoningBudget     *int
 	DisableAnswerRoom          bool
+	DisableFitMaxTokens        bool
 	RepeatStopTokens           *int
 	AnthropicThinkingOnRequest bool
 	DefaultSampling            engine.Sampling
@@ -172,16 +173,17 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 }
 
 type options struct {
-	stream     bool
-	noTools    bool
-	force      string
-	max        int
-	stops      []string
-	sampling   engine.Sampling
-	structured bool
-	repair     bool
-	schema     *outputSchema
-	budget     int
+	stream      bool
+	noTools     bool
+	force       string
+	max         int
+	explicitMax bool
+	stops       []string
+	sampling    engine.Sampling
+	structured  bool
+	repair      bool
+	schema      *outputSchema
+	budget      int
 }
 
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
@@ -235,6 +237,7 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		}
 		if n > 0 {
 			o.max = n
+			o.explicitMax = true
 		}
 	}
 	for _, field := range root.Fields() {
@@ -385,10 +388,13 @@ var stopGeneration = errors.New("stop sequence reached")
 
 // The native engine reserves eight context positions. Match Python's default
 // fit_max_tokens behavior by shortening the answer to the space left.
-func fitOutputTokens(contextLimit, promptTokens, requested int) (int, error) {
+func fitOutputTokens(contextLimit, promptTokens, requested int, strict bool, explicit bool) (int, error) {
 	room := contextLimit - 8 - promptTokens
+	if strict && explicit && requested > room {
+		return 0, fmt.Errorf("request exceeds the context window: prompt (%d tokens) + max tokens (%d) exceeds the context (%d); requests are never truncated. Send a smaller max_tokens (at most %d here), or add \"fit_max_tokens\": true to the model's strata-<model>.json to shorten it to the room left (#545)", promptTokens, requested, contextLimit, max(0, room))
+	}
 	if room < 1 {
-		return 0, errors.New("prompt leaves no room for output")
+		return 0, fmt.Errorf("request exceeds the context window: prompt (%d tokens) leaves no room to answer in the context (%d); requests are never truncated", promptTokens, contextLimit)
 	}
 	if requested > room {
 		return room, nil
@@ -427,7 +433,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max)
+	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max, s.cfg.DisableFitMaxTokens, opt.explicitMax)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return

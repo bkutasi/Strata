@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -59,6 +60,7 @@ func run() error {
 	var aliases []string
 	var anthropicThinkingOnRequest bool
 	var disableAnswerRoom bool
+	var disableFitMaxTokens bool
 	if *configPath != "" {
 		cfg, err := readStandaloneConfig(*configPath)
 		if err != nil {
@@ -68,6 +70,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		disableFitMaxTokens = bytes.Equal(bytes.TrimSpace(cfg.FitMaxTokens), []byte("false"))
 		repeatStopTokens, err = cfg.repeatStopConfig()
 		if err != nil {
 			return err
@@ -208,7 +211,7 @@ func run() error {
 			log.Printf("engine close: %v", err)
 		}
 	}()
-	handler, err := server.New(server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort})
+	handler, err := server.New(server.Config{Model: *model, Aliases: aliases, Family: selectedFamily, Tokenizer: tok, Engine: supervisor, Renderer: renderer, APIKeys: keys, MaxBody: 2 << 20, MaxPromptBytes: 2 << 20, MaxOutputTokens: int(^uint(0) >> 1), MaxConcurrent: 4, DefaultReasoningBudget: defaultReasoningBudget, DisableAnswerRoom: disableAnswerRoom, DisableFitMaxTokens: disableFitMaxTokens, RepeatStopTokens: repeatStopTokens, AnthropicThinkingOnRequest: anthropicThinkingOnRequest, DefaultSampling: defaultSampling, DefaultReasoningEffort: defaultReasoningEffort})
 	if err != nil {
 		return err
 	}

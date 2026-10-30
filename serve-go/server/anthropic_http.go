@@ -49,7 +49,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max)
+	opt.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), opt.max, s.cfg.DisableFitMaxTokens, opt.explicitMax)
 	if err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return

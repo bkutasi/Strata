@@ -34,6 +34,7 @@ type standaloneConfig struct {
 	Env               map[string]string `json:"env"`
 	Log               string            `json:"log"`
 	AnswerRoom        json.RawMessage   `json:"answer_room"`
+	FitMaxTokens      json.RawMessage   `json:"fit_max_tokens,omitempty"`
 	ReasoningBudget   json.RawMessage   `json:"reasoning_budget_tokens"`
 	RepeatStop        json.RawMessage   `json:"repeat_stop_tokens,omitempty"`
 	AnthropicThinking string            `json:"anthropic_thinking,omitempty"`

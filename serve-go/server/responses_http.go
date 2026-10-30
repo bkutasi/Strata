@@ -87,6 +87,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 					err = errors.New("invalid max_output_tokens")
 				} else if n > 0 {
 					o.max = n
+					o.explicitMax = true
 				}
 			}
 		case "temperature", "top_p", "top_k", "min_p", "repetition_penalty", "repeat_penalty",
@@ -141,9 +142,9 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")
 		return
 	}
-	o.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), o.max)
+	o.max, err = fitOutputTokens(s.cfg.Engine.ContextLimit(), len(ids), o.max, s.cfg.DisableFitMaxTokens, o.explicitMax)
 	if err != nil {
-		fail(w, 400, "invalid_request_error", err.Error())
+		failResponsesRequest(w, &responses.Error{Message: err.Error(), Param: "input", Status: 400, Code: "context_length_exceeded"})
 		return
 	}
 	o.budget = s.effectiveReasoningBudget(rendered.Thinking, o.max, o.budget)
