@@ -56,7 +56,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	renderer, err := server.NewTemplateRenderer(*pack)
+	renderer, err := server.NewTemplateRenderer(*pack, tok)
 	if err != nil {
 		log.Fatal(err)
 	}

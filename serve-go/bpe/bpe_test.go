@@ -65,6 +65,18 @@ func TestRankSpecialSpansAndBytes(t *testing.T) {
 	}
 }
 
+func TestControlLiteralsAreCopied(t *testing.T) {
+	tok := synthetic(t)
+	got := tok.ControlLiterals()
+	if tok.VocabularySize() != 262 || !reflect.DeepEqual(got, []string{"｜x｜", "<xy>", "<x>"}) {
+		t.Fatalf("size %d, literals %v", tok.VocabularySize(), got)
+	}
+	got[0] = "modified"
+	if tok.ControlLiterals()[0] != "｜x｜" {
+		t.Fatal("control literals alias tokenizer storage")
+	}
+}
+
 func TestErrorsAndConcurrency(t *testing.T) {
 	tok := synthetic(t)
 	if _, err := New([]string{"a", "a"}, nil, nil, identity); err == nil {

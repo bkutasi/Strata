@@ -36,6 +36,18 @@ type Tokenizer struct {
 	split    Splitter
 }
 
+// VocabularySize returns the number of token IDs.
+func (t *Tokenizer) VocabularySize() int { return len(t.tokens) }
+
+// ControlLiterals returns a copy of the special-token texts.
+func (t *Tokenizer) ControlLiterals() []string {
+	out := make([]string, len(t.literals))
+	for i, literal := range t.literals {
+		out[i] = literal.text
+	}
+	return out
+}
+
 var byteChars [256]string
 var charBytes map[rune]byte
 

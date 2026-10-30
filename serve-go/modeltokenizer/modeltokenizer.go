@@ -102,14 +102,6 @@ func Load(path string) (*Tokenizer, error) {
 	}
 	specialIDs := make(map[string]int, len(cfg.SpecialIDs))
 	if len(cfg.SpecialIDs) != 0 {
-		data, err := os.ReadFile(filepath.Join(dir, "vocab.json"))
-		if err != nil {
-			return nil, err
-		}
-		var vocab map[string]json.RawMessage
-		if err := json.Unmarshal(data, &vocab); err != nil {
-			return nil, fmt.Errorf("vocab.json: %w", err)
-		}
 		for name, raw := range cfg.SpecialIDs {
 			var id int
 			if string(raw) == "null" {
@@ -118,7 +110,7 @@ func Load(path string) (*Tokenizer, error) {
 			if err := json.Unmarshal(raw, &id); err != nil {
 				return nil, fmt.Errorf("special token %q: %w", name, err)
 			}
-			if id < 0 || id >= len(vocab) {
+			if id < 0 || id >= core.VocabularySize() {
 				return nil, fmt.Errorf("special token %q has out-of-range id %d", name, id)
 			}
 			specialIDs[name] = id
@@ -126,6 +118,9 @@ func Load(path string) (*Tokenizer, error) {
 	}
 	return &Tokenizer{core: core, specialIDs: specialIDs}, nil
 }
+
+// ControlLiterals returns a copy of the special-token texts.
+func (t *Tokenizer) ControlLiterals() []string { return t.core.ControlLiterals() }
 
 // SpecialIDs returns a copy of the pack's special_ids, preserving its names.
 // Qwen packs use GGUF keys such as tokenizer.ggml.eos_token_id; DeepSeek

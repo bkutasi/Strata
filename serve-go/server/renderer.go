@@ -33,7 +33,10 @@ type TemplateRenderer struct {
 	mu       sync.Mutex
 }
 
-func NewTemplateRenderer(pack string) (*TemplateRenderer, error) {
+func NewTemplateRenderer(pack string, tokenizer *modeltokenizer.Tokenizer) (*TemplateRenderer, error) {
+	if tokenizer == nil {
+		return nil, errors.New("missing tokenizer")
+	}
 	dir := filepath.Join(pack, "tokenizer")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		dir = pack
@@ -48,34 +51,8 @@ func NewTemplateRenderer(pack string) (*TemplateRenderer, error) {
 	if err != nil {
 		return nil, err
 	}
-	vocabData, err := os.ReadFile(filepath.Join(dir, "vocab.json"))
-	if err != nil {
-		return nil, err
-	}
-	typesData, err := os.ReadFile(filepath.Join(dir, "token_type.json"))
-	if err != nil {
-		return nil, err
-	}
-	var vocab map[string]int
-	var types []int
-	if err = json.Unmarshal(vocabData, &vocab); err != nil {
-		return nil, err
-	}
-	if err = json.Unmarshal(typesData, &types); err != nil {
-		return nil, err
-	}
 	literals := []string{"<think>", "</think>"}
-	for text, id := range vocab {
-		if id < 0 || id >= len(types) {
-			return nil, errors.New("invalid tokenizer type mapping")
-		}
-		if types[id] == 3 || types[id] == 4 {
-			if text == "" {
-				return nil, errors.New("empty control token")
-			}
-			literals = append(literals, text)
-		}
-	}
+	literals = append(literals, tokenizer.ControlLiterals()...)
 	return &TemplateRenderer{renderer: t, literals: literals}, nil
 }
 

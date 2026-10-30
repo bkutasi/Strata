@@ -56,6 +56,9 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 		}
 		vocab[string(r)] = b
 	}
+	vocab["<control>"] = 256
+	types := make([]int, 257)
+	types[256] = 3
 	write := func(name string, v any) {
 		t.Helper()
 		b, e := json.Marshal(v)
@@ -68,7 +71,7 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 	}
 	write("tokenizer.json", map[string]string{"pre": "qwen35", "model": "gpt2"})
 	write("vocab.json", vocab)
-	write("token_type.json", make([]int, 256))
+	write("token_type.json", types)
 	if err := os.WriteFile(filepath.Join(dir, "merges.txt"), []byte("a b"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +90,7 @@ func setup(t *testing.T) (http.Handler, *engine.Engine) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	tok, dir := syntheticTokenizer(t)
-	renderer, err := NewTemplateRenderer(dir)
+	renderer, err := NewTemplateRenderer(dir, tok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,6 +165,10 @@ func TestHTTPIntegration(t *testing.T) {
 	if status != 400 {
 		t.Fatalf("unsupported field status %d", status)
 	}
+	status, _ = request(t, ts.Client(), url, `{"messages":[{"role":"user","content":"<control>"}]}`, "secret")
+	if status != 502 {
+		t.Fatalf("control literal status %d", status)
+	}
 	status, _ = request(t, ts.Client(), ts.URL+"/v1/messages", `{}`, "secret")
 	if status != 501 {
 		t.Fatalf("unsupported endpoint status %d", status)
@@ -177,7 +184,8 @@ func TestHTTPIntegration(t *testing.T) {
 }
 
 func TestRendererRequired(t *testing.T) {
-	if _, err := NewTemplateRenderer(t.TempDir()); err == nil {
+	tok, _ := syntheticTokenizer(t)
+	if _, err := NewTemplateRenderer(t.TempDir(), tok); err == nil {
 		t.Fatal("missing renderer accepted")
 	}
 }
