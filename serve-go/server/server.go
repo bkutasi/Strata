@@ -125,7 +125,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	countTokens := r.URL.Path == "/v1/messages/count_tokens" || r.URL.Path == "/v1/v1/messages/count_tokens"
 	messages := r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/v1/messages"
-	if r.URL.Path != "/v1/chat/completions" && !countTokens && !messages {
+	responses := r.URL.Path == "/v1/responses"
+	if r.URL.Path != "/v1/chat/completions" && !countTokens && !messages && !responses {
 		fail(w, http.StatusNotImplemented, "unsupported_endpoint", "endpoint is not implemented")
 		return
 	}
@@ -134,7 +135,9 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusMethodNotAllowed, "invalid_request_error", "POST required")
 		return
 	}
-	if countTokens {
+	if responses {
+		s.responses(w, r)
+	} else if countTokens {
 		s.countTokens(w, r)
 	} else if messages {
 		s.anthropic(w, r)

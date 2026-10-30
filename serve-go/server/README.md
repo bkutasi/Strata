@@ -7,9 +7,14 @@ limited set of request fields, lists the model at `GET /v1/models`, and reports
 health at `GET /health` and `GET /api/health`. It also accepts text-only
 Anthropic requests at `POST /v1/messages`, including streaming, and counts
 prompts at `POST /v1/messages/count_tokens` without running generation.
-Both APIs support `auto` and `none` tool choices; forced or named choices and
+It also accepts stateless text-only requests at `POST /v1/responses`, with
+named streaming events, reasoning and completed function calls. Stored responses,
+images, structured output, custom tools, and `parallel_tool_calls: false` are
+not supported. Non-finite generated tool arguments fail the response. Tool
+argument object keys may be reordered by the parser.
+The APIs support `auto` and `none` tool choices; forced or named choices and
 Anthropic reasoning budgets are not supported. Incomplete tool calls are not
-streamed. Both APIs reject images and use the renderer limits below. Other
+streamed. All APIs reject images and use the renderer limits below. Other
 endpoints and model families are not implemented.
 Chat sampling supports temperature, top-p, top-k, min-p, repetition,
 frequency and presence penalties, penalty window, and seed.

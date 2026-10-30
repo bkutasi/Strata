@@ -7,6 +7,7 @@ require (
 	strata/engine v0.0.0
 	strata/outputparser v0.0.0
 	strata/requestnorm v0.0.0
+	strata/responses v0.0.0
 	strata/serve-go/modeltokenizer v0.0.0
 	strata/streamtext v0.0.0
 	strata/template v0.0.0
@@ -28,6 +29,8 @@ replace strata/serve-go/bpe => ../bpe
 replace strata/tokenizer => ../tokenizer
 
 replace strata/requestnorm => ../requestnorm
+
+replace strata/responses => ../responses
 
 replace strata/outputparser => ../outputparser
 
