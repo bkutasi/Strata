@@ -198,6 +198,65 @@ func TestRendererRequired(t *testing.T) {
 	}
 }
 
+func TestStreamOptionsAllowUsageRequests(t *testing.T) {
+	h, _ := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	for _, option := range []string{`{"include_usage":true}`, `{"include_usage":false}`, `null`} {
+		body := `{"messages":[{"role":"user","content":"Hi"}],"stream":true,"stream_options":` + option +
+			`,"max_tokens":32,"chat_template_kwargs":{"enable_thinking":false}}`
+		status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+		if status != http.StatusOK {
+			t.Fatalf("stream_options %s: status %d: %s", option, status, raw)
+		}
+		var content strings.Builder
+		var finish string
+		var usage *struct {
+			Prompt     int `json:"prompt_tokens"`
+			Completion int `json:"completion_tokens"`
+			Total      int `json:"total_tokens"`
+		}
+		done := false
+		for _, line := range strings.Split(raw, "\n") {
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				done = true
+				continue
+			}
+			var chunk struct {
+				Choices []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+					Finish string `json:"finish_reason"`
+				} `json:"choices"`
+				Usage *struct {
+					Prompt     int `json:"prompt_tokens"`
+					Completion int `json:"completion_tokens"`
+					Total      int `json:"total_tokens"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil || len(chunk.Choices) != 1 {
+				t.Fatalf("invalid chunk %q: %v", data, err)
+			}
+			content.WriteString(chunk.Choices[0].Delta.Content)
+			if chunk.Choices[0].Finish != "" {
+				finish = chunk.Choices[0].Finish
+			}
+			if chunk.Usage != nil {
+				usage = chunk.Usage
+			}
+		}
+		if !done || content.String() != "hello STOPhidden" || finish != "stop" ||
+			usage == nil || usage.Prompt != 2 || usage.Completion != 16 || usage.Total != 18 {
+			t.Fatalf("stream_options %s: content %q, finish %q, usage %#v, done %t", option, content.String(), finish, usage, done)
+		}
+	}
+}
+
 func TestHTTPToolCall(t *testing.T) {
 	h, _ := setupEngine(t, "engine-tool")
 	ts := httptest.NewServer(h)

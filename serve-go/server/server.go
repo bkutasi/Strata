@@ -160,6 +160,8 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 				return requestnorm.Result{}, o, errors.New("stream must be a boolean")
 			}
 			o.stream = b
+		case "stream_options":
+			// Python ignores this field and always includes usage in the final chunk.
 		case "max_tokens", "max_completion_tokens":
 			if maxSet {
 				return requestnorm.Result{}, o, errors.New("provide only one max token field")
