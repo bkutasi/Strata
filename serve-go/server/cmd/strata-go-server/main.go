@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"syscall"
 	"time"
 
 	"strata/engine"
@@ -65,6 +66,8 @@ func run() error {
 	if len(keys) == 0 && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("non-loopback listening requires an API key")
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	tok, err := modeltokenizer.Load(*pack)
 	if err != nil {
 		return err
@@ -78,8 +81,14 @@ func run() error {
 		defer cancel()
 		return engine.Start(ctx, *engineExe, engineArgs, os.Stderr)
 	}
-	eng, err := start(context.Background())
+	if ctx.Err() != nil {
+		return nil
+	}
+	eng, err := start(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) && !errors.Is(err, engine.ErrUnreaped) {
+			return nil
+		}
 		return err
 	}
 	supervisor, err := engine.Supervise(eng, start)
@@ -106,8 +115,6 @@ func run() error {
 		return err
 	}
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
