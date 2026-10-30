@@ -4,9 +4,26 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestSplitJoinedConfigArgs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := `{"exe":"e","tokenizer":"t","model_name":"m","args":["--ple-io mmap","--prefill=auto","--pack","--not-an-option=literal","model file.gguf","--flag=","--empty "]}`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := readStandaloneConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--ple-io", "mmap", "--prefill", "auto", "--pack", "--not-an-option=literal", "model file.gguf", "--flag=", "--empty "}
+	if !reflect.DeepEqual(cfg.Args, want) {
+		t.Fatalf("args = %#v, want %#v", cfg.Args, want)
+	}
+}
 
 func TestStandaloneConfig(t *testing.T) {
 	dir := t.TempDir()

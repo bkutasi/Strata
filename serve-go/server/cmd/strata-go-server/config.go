@@ -9,11 +9,15 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"strata/requestnorm"
 )
+
+var joinedConfigArg = regexp.MustCompile(`^(--[A-Za-z0-9][A-Za-z0-9-]*)([[:space:]]+|=)([^[:space:]].*)$`)
+var bareConfigFlag = regexp.MustCompile(`^--[A-Za-z0-9][A-Za-z0-9-]*$`)
 
 // standaloneConfig supports the fields in the standalone Strata run config.
 // Unknown settings are rejected rather than silently ignored.
@@ -144,6 +148,16 @@ func readStandaloneConfig(path string) (standaloneConfig, error) {
 	if cfg.Exe == "" || cfg.Tokenizer == "" || cfg.Model == "" {
 		return cfg, errors.New("config requires exe, tokenizer and model_name")
 	}
+	var args []string
+	for _, arg := range cfg.Args {
+		matches := joinedConfigArg.FindStringSubmatch(arg)
+		if matches != nil && (len(args) == 0 || !bareConfigFlag.MatchString(args[len(args)-1])) {
+			args = append(args, matches[1], strings.TrimSpace(matches[3]))
+		} else {
+			args = append(args, arg)
+		}
+	}
+	cfg.Args = args
 	if _, err := cfg.aliasesConfig(); err != nil {
 		return cfg, fmt.Errorf("invalid config: %w", err)
 	}
