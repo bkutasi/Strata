@@ -63,3 +63,44 @@ func TestChatLogitBiasHTTP(t *testing.T) {
 		t.Fatalf("empty bias on unsupported engine: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestOtherAPIsLogitBiasHTTP(t *testing.T) {
+	tok, _ := syntheticTokenizer(t)
+	eng := &biasCapture{supported: true}
+	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
+		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
+		MaxOutputTokens: 128, MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ path, prefix string }{
+		{"/v1/messages", `"messages":[{"role":"user","content":"hi"}],"max_tokens":32`},
+		{"/v1/responses", `"input":"hi","max_output_tokens":32`},
+	} {
+		for _, stream := range []string{"false", "true"} {
+			eng.supported = true
+			body := `{` + tc.prefix + `,"logit_bias":[[9,2.5],[7,false]],"stream":` + stream + `}`
+			w := responsesRequest(h, "http://127.0.0.1"+tc.path, body, "")
+			if w.Code != http.StatusOK || !reflect.DeepEqual(eng.sampling.LogitBias, map[int]float64{7: -100, 9: 2.5}) {
+				t.Fatalf("%s stream=%s status=%d bias=%v body=%s", tc.path, stream, w.Code, eng.sampling.LogitBias, w.Body)
+			}
+			before := eng.calls
+			eng.supported = false
+			w = responsesRequest(h, "http://127.0.0.1"+tc.path, body, "")
+			if w.Code != http.StatusBadRequest || eng.calls != before {
+				t.Fatalf("%s unsupported: status=%d calls=%d body=%s", tc.path, w.Code, eng.calls-before, w.Body)
+			}
+			eng.supported = true
+			body = `{` + tc.prefix + `,"logit_bias":{"260":1},"stream":` + stream + `}`
+			w = responsesRequest(h, "http://127.0.0.1"+tc.path, body, "")
+			if w.Code != http.StatusBadRequest || eng.calls != before {
+				t.Fatalf("%s invalid: status=%d calls=%d body=%s", tc.path, w.Code, eng.calls-before, w.Body)
+			}
+		}
+	}
+	before := eng.calls
+	w := responsesRequest(h, "http://127.0.0.1/v1/messages/count_tokens", `{"messages":[{"role":"user","content":"hi"}],"logit_bias":{"bad":"ignored"}}`, "")
+	if w.Code != http.StatusOK || eng.calls != before {
+		t.Fatalf("count: status=%d calls=%d body=%s", w.Code, eng.calls-before, w.Body)
+	}
+}

@@ -94,3 +94,17 @@ func parseLogitBias(value requestnorm.Value, vocabSize int) (map[int]float64, er
 	}
 	return out, nil
 }
+
+func (s *server) requestLogitBias(value requestnorm.Value) (map[int]float64, error) {
+	bias, err := parseLogitBias(value, s.cfg.Tokenizer.VocabularySize())
+	if err != nil {
+		return nil, err
+	}
+	if len(bias) != 0 {
+		capable, ok := s.cfg.Engine.(interface{ SupportsLogitBias() bool })
+		if !ok || !capable.SupportsLogitBias() {
+			return nil, errors.New("logit_bias: this engine does not support token biases or has continuous batching enabled")
+		}
+	}
+	return bias, nil
+}

@@ -72,6 +72,11 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 				return requestnorm.AnthropicResult{}, o, errors.New("stream must be a boolean")
 			}
 		case "stop", "stop_sequences":
+		case "logit_bias":
+			o.sampling.LogitBias, err = s.requestLogitBias(v)
+			if err != nil {
+				return requestnorm.AnthropicResult{}, o, err
+			}
 		case "tool_choice":
 			toolChoice = v
 		case "reasoning_budget_tokens", "thinking_budget_tokens":

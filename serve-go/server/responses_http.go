@@ -79,6 +79,8 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		switch f.Name {
 		case "stream":
 			o.stream, _ = v.Bool()
+		case "logit_bias":
+			o.sampling.LogitBias, err = s.requestLogitBias(v)
 		case "max_output_tokens":
 			if v.Kind() != requestnorm.Null {
 				text, ok := v.Integer()
