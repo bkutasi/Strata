@@ -32,6 +32,7 @@ type literal struct {
 // supplied Splitter is also safe for concurrent use.
 type Tokenizer struct {
 	tokens       string
+	shortOffsets []byte
 	offsets      []uint32
 	wideOffsets  []int
 	special      []byte // one bit per special-token ID
@@ -39,6 +40,7 @@ type Tokenizer struct {
 	wideIDs      []uint32
 	seed         maphash.Seed
 	rankOffsets  []uint32
+	shortRanks   []byte
 	ranks        []rankEntry
 	compactRanks []byte
 	literals     []literal
@@ -50,12 +52,28 @@ func (t *Tokenizer) VocabularySize() int {
 	if t.wideOffsets != nil {
 		return len(t.wideOffsets) - 1
 	}
+	if t.shortOffsets != nil {
+		return len(t.shortOffsets)/3 - 1
+	}
 	return len(t.offsets) - 1
+}
+
+func offset24(data []byte, i int) uint32 {
+	p := data[i*3 : i*3+3]
+	return uint32(p[0]) | uint32(p[1])<<8 | uint32(p[2])<<16
+}
+
+func setOffset24(data []byte, i int, value uint32) {
+	p := data[i*3 : i*3+3]
+	p[0], p[1], p[2] = byte(value), byte(value>>8), byte(value>>16)
 }
 
 func (t *Tokenizer) token(id int) string {
 	if t.wideOffsets != nil {
 		return t.tokens[t.wideOffsets[id]:t.wideOffsets[id+1]]
+	}
+	if t.shortOffsets != nil {
+		return t.tokens[offset24(t.shortOffsets, id):offset24(t.shortOffsets, id+1)]
 	}
 	return t.tokens[t.offsets[id]:t.offsets[id+1]]
 }
@@ -144,7 +162,12 @@ func (t *Tokenizer) rankAt(i int) rankEntry {
 }
 
 func (t *Tokenizer) mergeRank(left, right uint32) (uint32, bool) {
-	start, end := int(t.rankOffsets[left]), int(t.rankOffsets[int(left)+1])
+	var start, end int
+	if t.shortRanks != nil {
+		start, end = int(offset24(t.shortRanks, int(left))), int(offset24(t.shortRanks, int(left)+1))
+	} else {
+		start, end = int(t.rankOffsets[left]), int(t.rankOffsets[int(left)+1])
+	}
 	i := sort.Search(end-start, func(i int) bool { return t.rankAt(start+i).right >= right })
 	if i == end-start {
 		return 0, false
@@ -202,9 +225,12 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	}
 	var packed strings.Builder
 	packed.Grow(total)
+	var shortOffsets []byte
 	var offsets []uint32
 	var wideOffsets []int
-	if uint64(total) <= uint64(^uint32(0)) {
+	if total < 1<<24 {
+		shortOffsets = make([]byte, (len(tokens)+1)*3)
+	} else if uint64(total) <= uint64(^uint32(0)) {
 		offsets = make([]uint32, len(tokens)+1)
 	} else {
 		wideOffsets = make([]int, len(tokens)+1)
@@ -213,11 +239,13 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		packed.WriteString(s)
 		if wideOffsets != nil {
 			wideOffsets[i+1] = packed.Len()
+		} else if shortOffsets != nil {
+			setOffset24(shortOffsets, i+1, uint32(packed.Len()))
 		} else {
 			offsets[i+1] = uint32(packed.Len())
 		}
 	}
-	t := &Tokenizer{tokens: packed.String(), offsets: offsets, wideOffsets: wideOffsets, seed: maphash.MakeSeed(), split: split}
+	t := &Tokenizer{tokens: packed.String(), shortOffsets: shortOffsets, offsets: offsets, wideOffsets: wideOffsets, seed: maphash.MakeSeed(), split: split}
 	if len(tokens) <= 1<<24-1 {
 		t.ids = make([]byte, capacity*3)
 	} else {
@@ -273,7 +301,11 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 			unique++
 		}
 	}
-	t.rankOffsets = make([]uint32, len(tokens)+1)
+	if unique < 1<<24 {
+		t.shortRanks = make([]byte, (len(tokens)+1)*3)
+	} else {
+		t.rankOffsets = make([]uint32, len(tokens)+1)
+	}
 	if len(tokens) <= 1<<24 && len(merges) <= 1<<24 {
 		t.compactRanks = make([]byte, 0, unique*6)
 	} else {
@@ -286,7 +318,11 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		}
 		for group < int(entry.left) {
 			group++
-			t.rankOffsets[group] = uint32(count)
+			if t.shortRanks != nil {
+				setOffset24(t.shortRanks, group, uint32(count))
+			} else {
+				t.rankOffsets[group] = uint32(count)
+			}
 		}
 		if t.ranks != nil {
 			t.ranks = append(t.ranks, rankEntry{entry.right, entry.rank})
@@ -298,7 +334,11 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	}
 	for group < len(tokens) {
 		group++
-		t.rankOffsets[group] = uint32(count)
+		if t.shortRanks != nil {
+			setOffset24(t.shortRanks, group, uint32(count))
+		} else {
+			t.rankOffsets[group] = uint32(count)
+		}
 	}
 	return t, nil
 }

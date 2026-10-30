@@ -221,17 +221,55 @@ func TestWideVocabularyOffsets(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Exercise the large-vocabulary representation without allocating 4 GiB.
-	tok.wideOffsets = make([]int, len(tok.offsets))
-	for i, offset := range tok.offsets {
-		tok.wideOffsets[i] = int(offset)
+	tok.wideOffsets = make([]int, tok.VocabularySize()+1)
+	for i := range tok.wideOffsets {
+		tok.wideOffsets[i] = int(offset24(tok.shortOffsets, i))
 	}
-	tok.offsets = nil
+	tok.shortOffsets = nil
 	if tok.VocabularySize() != 3 || tok.token(0) != "" || tok.token(1) != "a" || tok.token(2) != "<special>" {
 		t.Fatal("wide offsets changed vocabulary")
 	}
 	ids, err := tok.Encode("<special>a", false, nil)
 	if err != nil || !reflect.DeepEqual(ids, []int{2, 1}) {
 		t.Fatalf("wide offsets encoding = %v, %v", ids, err)
+	}
+}
+
+func TestCompactOffsetLimitsAndWideFallback(t *testing.T) {
+	buf := make([]byte, 6)
+	setOffset24(buf, 0, 0x010203)
+	setOffset24(buf, 1, 0xffffff)
+	if offset24(buf, 0) != 0x010203 || offset24(buf, 1) != 0xffffff {
+		t.Fatalf("offset round trip %x", buf)
+	}
+	for _, total := range []int{(1 << 24) - 1, 1 << 24} {
+		t.Run(fmt.Sprint(total), func(t *testing.T) {
+			token := strings.Repeat("x", total)
+			tok, err := New([]string{token}, nil, nil, identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (tok.shortOffsets != nil) != (total < 1<<24) || tok.token(0) != token || tok.VocabularySize() != 1 {
+				t.Fatalf("total %d: compact=%v vocabulary=%d", total, tok.shortOffsets != nil, tok.VocabularySize())
+			}
+		})
+	}
+}
+
+func TestWideRankOffsets(t *testing.T) {
+	tok, err := New([]string{"a", "b", "c"}, []string{"a c", "a b", "b c"}, nil, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok.rankOffsets = make([]uint32, len(tok.shortRanks)/3)
+	for i := range tok.rankOffsets {
+		tok.rankOffsets[i] = offset24(tok.shortRanks, i)
+	}
+	tok.shortRanks = nil
+	for _, pair := range []struct{ left, right, rank uint32 }{{0, 1, 1}, {0, 2, 0}, {1, 2, 2}} {
+		if rank, ok := tok.mergeRank(pair.left, pair.right); !ok || rank != pair.rank {
+			t.Fatalf("rank(%d,%d) = %d, %v", pair.left, pair.right, rank, ok)
+		}
 	}
 }
 
