@@ -17,6 +17,7 @@ import (
 // Messages prompt.
 type anthropicOptions struct {
 	stream   bool
+	noTools  bool
 	max      int
 	stops    []string
 	sampling engine.Sampling
@@ -99,7 +100,10 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 				}
 			}
 		case "tool_choice":
-			return requestnorm.AnthropicResult{}, o, errors.New("tool_choice is not supported")
+			o.noTools, err = toolChoiceNone(v)
+			if err != nil {
+				return requestnorm.AnthropicResult{}, o, err
+			}
 		case "reasoning_budget_tokens":
 			// The prompt normalizer accepts this for count parity, but generation
 			// does not yet apply the budget.
@@ -169,6 +173,9 @@ func (s *server) decodeAnthropicRequest(data []byte) (requestnorm.AnthropicResul
 		if m.Content.Parts != nil {
 			return requestnorm.AnthropicResult{}, o, errors.New("images are not supported")
 		}
+	}
+	if o.noTools {
+		result.Tools = nil
 	}
 	return result, o, nil
 }

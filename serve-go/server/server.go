@@ -145,9 +145,40 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 
 type options struct {
 	stream   bool
+	noTools  bool
 	max      int
 	stops    []string
 	sampling engine.Sampling
+}
+
+func toolChoiceNone(value requestnorm.Value) (bool, error) {
+	if value.Kind() == requestnorm.Null {
+		return false, nil
+	}
+	if value.Kind() == requestnorm.String {
+		choice, _ := value.Text()
+		switch choice {
+		case "auto":
+			return false, nil
+		case "none":
+			return true, nil
+		default:
+			return false, errors.New("unsupported tool_choice")
+		}
+	}
+	if value.Kind() == requestnorm.Object {
+		kind, ok := value.Lookup("type")
+		if ok && kind.Kind() == requestnorm.String {
+			choice, _ := kind.Text()
+			switch choice {
+			case "auto":
+				return false, nil
+			case "none":
+				return true, nil
+			}
+		}
+	}
+	return false, errors.New("unsupported tool_choice")
 }
 
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
@@ -170,6 +201,12 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 				return requestnorm.Result{}, o, e
 			}
 			promptFields[field.Name] = b
+		case "tool_choice":
+			none, err := toolChoiceNone(v)
+			if err != nil {
+				return requestnorm.Result{}, o, err
+			}
+			o.noTools = none
 		case "model":
 			m, ok := v.Text()
 			if !ok || v.Kind() != requestnorm.String || m != s.cfg.Model {
@@ -284,6 +321,9 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	}
 	if err = requestnorm.RequireMessages(result.Messages); err != nil {
 		return result, o, err
+	}
+	if o.noTools {
+		result.Tools = nil
 	}
 	return result, o, nil
 }

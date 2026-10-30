@@ -25,7 +25,7 @@ func TestDecodeAnthropicRequest(t *testing.T) {
 		{"happy", `{"model":"model","max_tokens":20,"messages":[{"role":"user","content":"hi"}],"temperature":0.7}`, false, "", "", 0, false},
 		{"stream", `{"model":"model","max_tokens":20,"stream":true,"messages":[{"role":"user","content":"hi"}]}`, true, "", "", 0, false},
 		{"invalid sampling", `{"model":"model","messages":[{"role":"user","content":"hi"}],"temperature":[]}`, false, "temperature", "", 0, false},
-		{"tool choice", `{"model":"model","messages":[{"role":"user","content":"hi"}],"tool_choice":{"type":"auto"}}`, false, "tool_choice", "", 0, false},
+		{"tool choice required", `{"model":"model","messages":[{"role":"user","content":"hi"}],"tool_choice":{"type":"any"}}`, false, "tool_choice", "", 0, false},
 		{"budget", `{"model":"model","messages":[{"role":"user","content":"hi"}],"reasoning_budget_tokens":12}`, false, "reasoning budget", "", 0, false},
 		{"stop precedence", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop":["a"],"stop_sequences":["b"]}`, false, "", "a", 0, false},
 		{"many stop sequences", `{"model":"model","messages":[{"role":"user","content":"hi"}],"stop_sequences":["a","b","c","d","e"]}`, false, "", "", 0, false},
