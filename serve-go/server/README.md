@@ -81,3 +81,7 @@ matched the text, tool-call arguments and stop result on those prompts. This
 does not verify the missing features above or full parity.
 Forced chat and Anthropic tool calls with thinking disabled also passed a
 short real-Qwen smoke test on the same GPU and context size.
+The installed orca Q4_K_M tokenizer matched Python on four sample inputs,
+and its template matched Python on three sample conversations, including a
+tool declaration. With a fake engine, its tokenizer and template served
+text requests on all three APIs. These checks did not load the model weights.
