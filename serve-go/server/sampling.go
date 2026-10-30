@@ -82,6 +82,9 @@ func applySamplingDefaults(s *engine.Sampling, defaults engine.Sampling, root re
 	if !present("seed") {
 		s.Seed = defaults.Seed
 	}
+	if !present("experimental_speed_projection") {
+		s.SpeedProjection = defaults.SpeedProjection
+	}
 }
 
 func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value requestnorm.Value) error {

@@ -47,6 +47,8 @@ advertises bias support and is not using continuous batching; unsupported
 engines reject the request.
 For one-shot requests, `"strata_checkpoint": false` skips creating a
 conversation checkpoint, as in Python; cached prefixes can still be reused.
+`experimental_speed_projection` can be set to true or false per request or
+in `sampling` defaults. It affects engines started with a control vector.
 Chat accepts `logprobs`, `top_logprobs` and `allowed_token_ids`. An older
 engine that does not send probabilities returns the answer without them.
 When Chat supplies both output-token limits, `max_completion_tokens` takes
@@ -99,8 +101,8 @@ Output limits are shortened to fit the context by default. Set
 `"fit_max_tokens": false` to reject an explicit positive output limit that
 exceeds the remaining context; omitted, zero and negative limits still use
 the available context, subject to `MaxOutputTokens`.
-The `strata_tune` and `experimental_speed_projection` sampling defaults are
-not supported. Other config fields are rejected rather than silently ignored.
+The `strata_tune` sampling default is not supported. Other config fields are
+rejected rather than silently ignored.
 `--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.

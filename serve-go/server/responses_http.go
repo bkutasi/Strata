@@ -82,6 +82,10 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		case "strata_checkpoint":
 			value, ok := v.Bool()
 			o.sampling.DisableCheckpoint = ok && !value
+		case "experimental_speed_projection":
+			if value, ok := v.Bool(); ok {
+				o.sampling.SpeedProjection = &value
+			}
 		case "logit_bias":
 			o.sampling.LogitBias, err = s.requestLogitBias(v)
 		case "max_output_tokens":

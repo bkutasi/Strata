@@ -315,6 +315,7 @@ type Sampling struct {
 	Logprobs                                             *int
 	AllowedTokenIDs                                      []int
 	DisableCheckpoint                                    bool
+	SpeedProjection                                      *bool
 }
 
 // Logprob describes the sampled token and the ordered native alternatives.
@@ -404,6 +405,13 @@ func samplingKeys(s Sampling) (string, error) {
 	}
 	if s.DisableCheckpoint {
 		keys.WriteString(" ckpt=0")
+	}
+	if s.SpeedProjection != nil {
+		if *s.SpeedProjection {
+			keys.WriteString(" cvec=1")
+		} else {
+			keys.WriteString(" cvec=0")
+		}
 	}
 	if s.Logprobs != nil {
 		if *s.Logprobs < 0 || *s.Logprobs > 20 {

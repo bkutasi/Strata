@@ -45,8 +45,16 @@ func ParseSamplingDefaults(data []byte) (engine.Sampling, error) {
 		if isJSONNull(raw) {
 			continue
 		}
-		if key == "strata_tune" || key == "experimental_speed_projection" {
+		if key == "strata_tune" {
 			return out, fmt.Errorf("sampling.%s is unsupported by this server", key)
+		}
+		if key == "experimental_speed_projection" {
+			var value bool
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return out, fmt.Errorf("sampling.%s: expected true or false", key)
+			}
+			out.SpeedProjection = &value
+			continue
 		}
 		switch key {
 		case "temperature", "top_p", "min_p", "top_k", "repetition_penalty", "frequency_penalty",

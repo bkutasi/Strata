@@ -650,6 +650,16 @@ func TestSamplingDefaultsAndValidation(t *testing.T) {
 	if err != nil || keys != " ckpt=0" {
 		t.Fatalf("checkpoint: %q %v", keys, err)
 	}
+	for _, value := range []bool{false, true} {
+		keys, err = samplingKeys(Sampling{SpeedProjection: &value})
+		want := " cvec=0"
+		if value {
+			want = " cvec=1"
+		}
+		if err != nil || keys != want {
+			t.Fatalf("projection %v: %q %v", value, keys, err)
+		}
+	}
 	for _, s := range []Sampling{{Temperature: f(math.NaN())}, {TopP: f(0)}, {MinP: f(1.1)}, {TopK: i(-1)}, {PenaltyLastN: i(-1)}, {RepetitionPenalty: f(0)}, {FrequencyPenalty: f(math.Inf(1))}} {
 		if _, err := samplingKeys(s); err == nil {
 			t.Fatalf("accepted invalid sampling: %#v", s)

@@ -319,6 +319,10 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 		case "strata_checkpoint":
 			value, ok := v.Bool()
 			o.sampling.DisableCheckpoint = ok && !value
+		case "experimental_speed_projection":
+			if value, ok := v.Bool(); ok {
+				o.sampling.SpeedProjection = &value
+			}
 		case "logprobs", "top_logprobs", "allowed_token_ids":
 		case "logit_bias":
 			o.sampling.LogitBias, err = s.requestLogitBias(v)
