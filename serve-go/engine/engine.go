@@ -52,6 +52,21 @@ type Engine struct {
 	waitErr error // published by closing exited
 }
 
+// Alive reports whether the child is still available for requests.
+func (e *Engine) Alive() bool {
+	if e.closing.Load() {
+		return false
+	}
+	select {
+	case <-e.exited:
+		return false
+	case <-e.stop:
+		return false
+	default:
+		return true
+	}
+}
+
 // Start starts exe with the supplied arguments (which must include --serve for
 // a native engine). stderr is separate from the protocol; nil discards it.
 // ctx bounds startup only.

@@ -189,3 +189,59 @@ func TestRendererRequired(t *testing.T) {
 		t.Fatal("missing renderer accepted")
 	}
 }
+
+func TestModelListTracksEngine(t *testing.T) {
+	h, eng := setup(t)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	get := func(key string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/models", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	resp := get("")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	check := func(want int) {
+		t.Helper()
+		resp := get("secret")
+		defer resp.Body.Close()
+		var body struct {
+			Object string `json:"object"`
+			Data   []struct {
+				ID   string `json:"id"`
+				Meta struct {
+					Context int `json:"n_ctx"`
+				} `json:"meta"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK || body.Object != "list" || len(body.Data) != want {
+			t.Fatalf("status %d, body %#v", resp.StatusCode, body)
+		}
+		if want == 1 && (body.Data[0].ID != "test" || body.Data[0].Meta.Context != 4096) {
+			t.Fatalf("model %#v", body.Data[0])
+		}
+	}
+	check(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := eng.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+}

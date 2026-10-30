@@ -83,6 +83,24 @@ func fail(w http.ResponseWriter, status int, kind, msg string) {
 }
 
 func (s *server) route(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/models" {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			fail(w, http.StatusMethodNotAllowed, "invalid_request_error", "GET required")
+			return
+		}
+		models := []any{}
+		if s.cfg.Engine.Alive() {
+			models = append(models, map[string]any{
+				"id": s.cfg.Model, "object": "model", "status": map[string]string{"value": "loaded"},
+				"meta":         map[string]int{"n_ctx": s.cfg.Engine.Context},
+				"architecture": map[string]any{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": models})
+		return
+	}
 	if r.URL.Path != "/v1/chat/completions" {
 		fail(w, http.StatusNotImplemented, "unsupported_endpoint", "endpoint is not implemented")
 		return
