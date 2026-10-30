@@ -26,6 +26,10 @@ var ErrUnreaped = errors.New("failed engine startup was not reaped")
 // ErrNonfinite means a native generation window contained non-finite logits.
 var ErrNonfinite = errors.New("native engine produced non-finite logits")
 
+// ErrStopGeneration asks the engine to stop after the current token and drain
+// its DONE record, so the process can serve the next request.
+var ErrStopGeneration = errors.New("stop generation")
+
 // EngineError is an ERR record from the native process. The process is discarded
 // even for validation errors because some native ERR records are followed by DONE.
 type EngineError string
@@ -362,8 +366,8 @@ func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, e
 	return e.GenerateWithOptions(ctx, ids, maxNew, RequestOptions{})
 }
 
-// GenerateWithOptions sends a text-only GEN. Callback errors discard the
-// process immediately and return the error with all tokens received so far.
+// GenerateWithOptions sends a text-only GEN. ErrStopGeneration from a callback
+// stops and drains the request; other callback errors discard the process.
 // Cancellation has the same STOP and discard behavior as Generate; no further
 // callbacks run after cancellation is observed. A callback panic discards the
 // process and propagates. Callbacks must return promptly.
@@ -400,6 +404,7 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 	var timer *time.Timer
 	ctxDone := ctx.Done()
 	var cancelled error
+	stopping := false
 	defer func() {
 		if timer != nil {
 			timer.Stop()
@@ -414,20 +419,27 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				e.abort()
 				return result, cancelled
 			}
-			stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
-			err := e.writeCommand(stopCtx, "STOP\n")
-			stopCancel()
-			if err != nil {
-				return result, errors.Join(cancelled, err)
+			if !stopping {
+				stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+				err := e.writeCommand(stopCtx, "STOP\n")
+				stopCancel()
+				if err != nil {
+					return result, errors.Join(cancelled, err)
+				}
+				timer = time.NewTimer(time.Second)
+				cancel = timer.C
+			} else {
+				timer.Reset(time.Second)
 			}
-			timer = time.NewTimer(time.Second)
-			cancel = timer.C
 		}
 		select {
 		case <-ctxDone:
 			continue
 		case <-cancel:
 			e.abort()
+			if cancelled == nil {
+				return result, errors.New("engine did not finish after STOP")
+			}
 			return result, cancelled
 		case r, ok := <-e.records:
 			if !ok || r.err != nil {
@@ -454,7 +466,7 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 					return result, fmt.Errorf("malformed token record %q", r.line)
 				}
 				result.Tokens = append(result.Tokens, int(id))
-				if cancelled == nil && ctx.Err() == nil && opts.OnToken != nil {
+				if !stopping && cancelled == nil && ctx.Err() == nil && opts.OnToken != nil {
 					err := func() error {
 						returned := false
 						defer func() {
@@ -466,7 +478,22 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 						returned = true
 						return err
 					}()
-					if err != nil {
+					if errors.Is(err, ErrStopGeneration) {
+						stopping = true
+						if e.CanStop {
+							stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+							err = e.writeCommand(stopCtx, "STOP\n")
+							stopCancel()
+							if err != nil {
+								e.abort()
+								return result, err
+							}
+							// Match the Python server's default silence allowance:
+							// a slow native decode step can take much longer than 10s.
+							timer = time.NewTimer(300 * time.Second)
+							cancel = timer.C
+						}
+					} else if err != nil {
 						e.abort()
 						return result, err
 					}
@@ -488,6 +515,9 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 				if err := ctx.Err(); err != nil {
 					e.abort()
 					return result, err
+				}
+				if stopping {
+					result.Finish = "stop"
 				}
 				return result, nil
 			default:

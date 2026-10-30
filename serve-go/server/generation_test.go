@@ -52,7 +52,7 @@ func TestGenerateStopTokenAndStopString(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || got != "a" || out.count != 3 || !out.stopped || parser.finish != "stop" {
+	if err != nil || got != "a" || out.count != 2 || !out.stopped || parser.finish != "stop" {
 		t.Fatalf("stop token: out=%+v got=%q finish=%q err=%v", out, got, parser.finish, err)
 	}
 
@@ -67,7 +67,7 @@ func TestGenerateStopTokenAndStopString(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || got != "x!" || out.count != 3 || !out.stopped || parser.finish != "stop" {
+	if err != nil || got != "x!" || out.count != 2 || !out.stopped || parser.finish != "stop" {
 		t.Fatalf("stop string: out=%+v got=%q finish=%q err=%v", out, got, parser.finish, err)
 	}
 }

@@ -37,7 +37,7 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 		}
 		if stopIDs[id] {
 			stoppedToken = true
-			return nil
+			return engine.ErrStopGeneration
 		}
 		raw, err := tokenizer.TokenBytes(id)
 		if err != nil {
@@ -49,15 +49,14 @@ func generate(ctx context.Context, e Engine, tokenizer *modeltokenizer.Tokenizer
 		}
 		err = callback(events)
 		if errors.Is(err, stopGeneration) {
-			// Drain inference until reusable STOP is supported.
 			stoppedToken = true
-			return nil
+			return engine.ErrStopGeneration
 		}
 		return err
 	}})
 	out.result = result
 	out.stopped = stoppedToken
-	if errors.Is(err, stopGeneration) {
+	if errors.Is(err, engine.ErrStopGeneration) {
 		err = nil
 	}
 	if err != nil {

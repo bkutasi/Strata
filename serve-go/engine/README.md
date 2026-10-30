@@ -29,8 +29,11 @@ An active penalty uses a 64-token window unless a positive `PenaltyLastN` is
 supplied. Seed 0 is omitted and the native engine chooses its seed. Invalid
 values are rejected before writing. Callbacks run in order on the request
 goroutine, after each token is collected and before DONE; they must return
-promptly and must not reenter the same engine. A callback error immediately
-kills and discards the child, returning the error and tokens collected so far.
+promptly and must not reenter the same engine. A callback can return
+`ErrStopGeneration` after a token to request STOP and drain DONE; the engine
+can then be reused. If STOP is not supported, it drains the ongoing generation.
+Other callback errors immediately kill and discard the child, returning the
+error and tokens collected so far.
 A callback panic also discards the child and propagates to the caller.
 On cancellation no callbacks run after cancellation is observed; tokens drained
 before DONE remain in the result. The caller must start a new engine after

@@ -34,7 +34,11 @@ func TestHelperProcess(t *testing.T) {
 	}
 	fmt.Fprintln(os.Stderr, "child diagnostics")
 	fmt.Println("INFO engine=test context=4096")
-	fmt.Println("READY 4096 stop")
+	if mode == "early-no-stop" {
+		fmt.Println("READY 4096")
+	} else {
+		fmt.Println("READY 4096 stop")
+	}
 	if mode == "blocked-write" {
 		var b [1]byte
 		if _, err := os.Stdin.Read(b[:]); err != nil {
@@ -50,6 +54,7 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	s := bufio.NewScanner(os.Stdin)
+	requests := 0
 	for s.Scan() {
 		line := s.Text()
 		if line == "TRIGGER" && mode == "idle-eof" {
@@ -65,7 +70,24 @@ func TestHelperProcess(t *testing.T) {
 			os.Exit(0)
 		}
 		if strings.HasPrefix(line, "GEN ") {
+			requests++
 			switch mode {
+			case "early-stop":
+				if requests == 1 {
+					fmt.Println("T 42")
+					if !s.Scan() || s.Text() != "STOP" {
+						os.Exit(2)
+					}
+					fmt.Println("T 43")
+					fmt.Println("DONE 2 1 1 2 cancel")
+				} else {
+					fmt.Println("T 44")
+					fmt.Println("DONE 1 1 1 2 stop")
+				}
+			case "early-no-stop":
+				fmt.Println("T 42")
+				fmt.Println("T 43")
+				fmt.Println("DONE 2 1 1 2 length")
 			case "sampling":
 				if line != "GEN 3 temperature=0.7 top_p=0.9 top_k=64 min_p=0.1 penalty_repeat=1.1 penalty_freq=-0.5 penalty_present=0.2 penalty_last_n=64 seed=123 12,34" {
 					fmt.Println("ERR unexpected command")
@@ -134,6 +156,52 @@ func TestHelperProcess(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestStopGenerationDrainsAndReusesEngine(t *testing.T) {
+	for _, mode := range []string{"early-stop", "early-no-stop"} {
+		t.Run(mode, func(t *testing.T) {
+			var stderr bytes.Buffer
+			e := startFake(t, mode, &stderr)
+			var seen []int
+			result, err := e.GenerateWithOptions(testContext(t), []int{1}, 3, RequestOptions{
+				OnToken: func(id int) error {
+					seen = append(seen, id)
+					return ErrStopGeneration
+				},
+			})
+			if err != nil || result.Finish != "stop" || fmt.Sprint(seen) != "[42]" || !e.Alive() {
+				t.Fatalf("result=%+v seen=%v alive=%v error=%v", result, seen, e.Alive(), err)
+			}
+			seen = nil
+			result, err = e.GenerateWithOptions(testContext(t), []int{1}, 3, RequestOptions{
+				OnToken: func(id int) error { seen = append(seen, id); return nil },
+			})
+			want := "[44]"
+			if mode == "early-no-stop" {
+				want = "[42 43]"
+			}
+			if err != nil || fmt.Sprint(seen) != want || !e.Alive() {
+				t.Fatalf("second result=%+v seen=%v alive=%v error=%v", result, seen, e.Alive(), err)
+			}
+		})
+	}
+}
+
+func TestCancellationAfterStopDiscardsEngine(t *testing.T) {
+	var stderr bytes.Buffer
+	e := startFake(t, "early-stop", &stderr)
+	ctx, cancel := context.WithCancel(testContext(t))
+	defer cancel()
+	_, err := e.GenerateWithOptions(ctx, []int{1}, 3, RequestOptions{
+		OnToken: func(int) error {
+			cancel()
+			return ErrStopGeneration
+		},
+	})
+	if !errors.Is(err, context.Canceled) || e.Alive() {
+		t.Fatalf("error=%v alive=%v", err, e.Alive())
+	}
 }
 
 func TestCallbackPanicDiscardsChild(t *testing.T) {
