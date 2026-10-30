@@ -19,7 +19,7 @@ type Splitter func(string) []string
 // Span protects literal starts in [Start, End), measured in UTF-8 byte offsets.
 type Span struct{ Start, End int }
 
-type pair struct{ left, right int }
+type pair struct{ left, right uint32 }
 type literal struct {
 	text    string
 	id, typ int
@@ -31,7 +31,7 @@ type Tokenizer struct {
 	tokens   []string
 	types    []int
 	ids      map[string]int
-	ranks    map[pair]int
+	ranks    map[pair]uint32
 	literals []literal
 	split    Splitter
 }
@@ -74,7 +74,10 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	if len(types) != 0 && len(types) != len(tokens) {
 		return nil, fmt.Errorf("token type count does not match vocabulary")
 	}
-	t := &Tokenizer{tokens: append([]string(nil), tokens...), types: append([]int(nil), types...), ids: make(map[string]int, len(tokens)), ranks: make(map[pair]int, len(merges)), split: split}
+	if uint64(len(tokens)) > uint64(^uint32(0)) || uint64(len(merges)) > uint64(^uint32(0)) {
+		return nil, fmt.Errorf("vocabulary or merge count exceeds uint32")
+	}
+	t := &Tokenizer{tokens: append([]string(nil), tokens...), types: append([]int(nil), types...), ids: make(map[string]int, len(tokens)), ranks: make(map[pair]uint32, len(merges)), split: split}
 	for i, s := range tokens {
 		if _, ok := t.ids[s]; ok {
 			return nil, fmt.Errorf("duplicate token %q", s)
@@ -101,7 +104,7 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 		if !ok {
 			return nil, fmt.Errorf("merge %d has unknown right token", i)
 		}
-		t.ranks[pair{left, right}] = i // matches the reference's last rank for duplicate pairs
+		t.ranks[pair{uint32(left), uint32(right)}] = uint32(i) // matches the reference's last rank for duplicate pairs
 	}
 	return t, nil
 }
@@ -178,8 +181,8 @@ func (t *Tokenizer) encodePiece(piece string) ([]int, error) {
 		j := next[i]
 		left, leftOK := t.ids[parts[i]]
 		right, rightOK := t.ids[parts[j]]
-		if r, ok := t.ranks[pair{left, right}]; leftOK && rightOK && ok {
-			heap.Push(h, candidate{r, i, j, parts[i], parts[j]})
+		if r, ok := t.ranks[pair{uint32(left), uint32(right)}]; leftOK && rightOK && ok {
+			heap.Push(h, candidate{int(r), i, j, parts[i], parts[j]})
 		}
 	}
 	for i := 0; i < n-1; i++ {
