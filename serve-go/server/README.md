@@ -57,7 +57,7 @@ integer `gpu`, string-valued `env`, and `log`. Other config fields are rejected
 rather than silently ignored. `--api-key` overrides the config key, while
 `--api-key-env` takes precedence over both. The config's host is used unless
 `--listen` is supplied; check it before starting a network-accessible server.
-This path has not been validated with every Python config or a real model.
+This path has not been validated with every Python config.
 
 An interrupted generation or engine protocol error discards the engine
 process. The next request starts it again; the failed request is not retried.
@@ -85,3 +85,8 @@ The installed orca Q4_K_M tokenizer matched Python on four sample inputs,
 and its template matched Python on three sample conversations, including a
 tool declaration. With a fake engine, its tokenizer and template served
 text requests on all three APIs. These checks did not load the model weights.
+A separate real-model smoke test used the orca Q4_K_M config, its requested
+262,144-token context, an RTX 3080 Ti, and Linux. One short non-streaming text
+request succeeded on each API. The Go server process used 24,952 KiB RSS after
+those requests; that excludes the native engine and model and is above 25 MB
+(decimal). This single run did not establish full parity or a memory ceiling.
