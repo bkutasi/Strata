@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -40,6 +41,7 @@ func run() error {
 	pack := flag.String("pack", "", "model pack or tokenizer directory")
 	engineExe := flag.String("engine", "", "native executable")
 	keyEnv := flag.String("api-key-env", "", "environment variable containing API key")
+	ownerFD := flag.String("owner-fd", "", "inherited owner pipe descriptor")
 	flag.Var(&engineArgs, "engine-arg", "native engine argument (repeat; include --serve and model flags)")
 	flag.Parse()
 	if flag.NArg() != 0 || *model == "" || *pack == "" || *engineExe == "" {
@@ -66,8 +68,28 @@ func run() error {
 	if len(keys) == 0 && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("non-loopback listening requires an API key")
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(signalCtx)
+	var owner *os.File
+	defer func() {
+		cancel()
+		if owner != nil {
+			if err := owner.Close(); err != nil {
+				log.Printf("owner pipe close: %v", err)
+			}
+		}
+		stop()
+	}()
+	if *ownerFD != "" {
+		fd, err := strconv.Atoi(*ownerFD)
+		if err != nil {
+			return fmt.Errorf("--owner-fd must be an inherited pipe")
+		}
+		owner, err = startOwnerGuard(ctx, cancel, fd)
+		if err != nil {
+			return err
+		}
+	}
 	tok, err := modeltokenizer.Load(*pack)
 	if err != nil {
 		return err

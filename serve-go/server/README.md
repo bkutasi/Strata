@@ -53,7 +53,13 @@ process. The next request starts it again; the failed request is not retried.
 If a failed startup's child cannot be confirmed stopped, further restarts are
 disabled to avoid loading a second engine.
 A SIGINT or SIGTERM stops the server and its engine, including during engine
-startup.
+startup. An optional `--owner-fd` pipe also stops them if its writer closes;
+on POSIX the server must be in its own process group. This guard alone does
+not provide the managed launch ready-file or attestation protocol. POSIX
+owner loss sends SIGTERM to the process group and escalates to SIGKILL after
+45 seconds if the server is still running. A descendant that ignores SIGTERM
+could survive if the server exits first. On Windows, tree containment needs
+the launcher-owned job object.
 A matched stop string sends STOP and drains the current request when the engine
 supports it. An older engine without STOP runs to the end of the request.
 
