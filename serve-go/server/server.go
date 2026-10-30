@@ -155,36 +155,6 @@ type options struct {
 	sampling engine.Sampling
 }
 
-func toolChoiceNone(value requestnorm.Value) (bool, error) {
-	if value.Kind() == requestnorm.Null {
-		return false, nil
-	}
-	if value.Kind() == requestnorm.String {
-		choice, _ := value.Text()
-		switch choice {
-		case "auto":
-			return false, nil
-		case "none":
-			return true, nil
-		default:
-			return false, errors.New("unsupported tool_choice")
-		}
-	}
-	if value.Kind() == requestnorm.Object {
-		kind, ok := value.Lookup("type")
-		if ok && kind.Kind() == requestnorm.String {
-			choice, _ := kind.Text()
-			switch choice {
-			case "auto":
-				return false, nil
-			case "none":
-				return true, nil
-			}
-		}
-	}
-	return false, errors.New("unsupported tool_choice")
-}
-
 func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 	root, err := requestnorm.ParseValue(data)
 	if err != nil {

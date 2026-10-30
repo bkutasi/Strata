@@ -77,8 +77,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			}
 		case "temperature", "top_p":
 			err = setSampling(&o.sampling, root, f.Name, v)
-		case "tool_choice":
-			o.noTools, err = toolChoiceNone(v)
 		}
 		if err != nil {
 			fail(w, 400, "invalid_request_error", err.Error())
@@ -104,9 +102,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 	if err = requestnorm.RequireMessages(prepared.Messages); err != nil {
 		fail(w, 400, "invalid_request_error", err.Error())
 		return
-	}
-	if o.noTools {
-		prepared.Tools = nil
 	}
 	input := requestnorm.Result{Messages: prepared.Messages, Tools: prepared.Tools, Kwargs: prepared.Kwargs}
 	rendered, err := s.cfg.Renderer.Render(r.Context(), input)

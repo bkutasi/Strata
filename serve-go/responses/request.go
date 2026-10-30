@@ -151,13 +151,6 @@ func checkRequest(req requestnorm.Value) error {
 			}
 		}
 	}
-	choice := field(req, "tool_choice")
-	if choice.Kind() != requestnorm.Null {
-		s, ok := stringOf(choice)
-		if !ok || (s != "auto" && s != "none") {
-			return unsupported("tool_choice", "only auto and none tool choices are supported")
-		}
-	}
 	return nil
 }
 

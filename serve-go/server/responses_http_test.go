@@ -110,6 +110,71 @@ func TestResponsesToolAndStream(t *testing.T) {
 	}
 }
 
+func TestResponsesToolChoicesMatchStatelessPython(t *testing.T) {
+	text := "<tool_call><function=lookup><parameter=x>7</parameter></function></tool_call>"
+	h := responsesHandler(t, text, "stop", false)
+	for _, tc := range []struct {
+		choice   string
+		wantCall bool
+	}{
+		{`"none"`, false},
+		{`"auto"`, true},
+		{`"required"`, true},
+		{`{"type":"function","name":"lookup"}`, true},
+		{`"unexpected"`, true},
+		{`null`, true},
+	} {
+		body := `{"input":"hello","tool_choice":` + tc.choice + `,"tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{"x":{"type":"integer"}}}}]}`
+		w := responsesRequest(h, "/v1/responses", body, "secret")
+		var response struct {
+			ToolChoice json.RawMessage `json:"tool_choice"`
+			Output     []struct {
+				Type string `json:"type"`
+				Name string `json:"name"`
+			} `json:"output"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK {
+			t.Errorf("%s: status %d, error %v: %s", tc.choice, w.Code, err, w.Body.String())
+			continue
+		}
+		var got, want any
+		if err := json.Unmarshal(response.ToolChoice, &got); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(tc.choice), &want); err != nil {
+			t.Fatal(err)
+		}
+		gotJSON, _ := json.Marshal(got)
+		wantJSON, _ := json.Marshal(want)
+		if string(gotJSON) != string(wantJSON) {
+			t.Errorf("choice = %s, want %s", gotJSON, wantJSON)
+		}
+		hasCall := false
+		for _, item := range response.Output {
+			hasCall = hasCall || item.Type == "function_call" && item.Name == "lookup"
+		}
+		if hasCall != tc.wantCall {
+			t.Errorf("%s: function call = %v, want %v: %s", tc.choice, hasCall, tc.wantCall, w.Body.String())
+		}
+	}
+}
+
+func TestResponsesRequiredDoesNotForceTool(t *testing.T) {
+	h := responsesHandler(t, "plain answer", "stop", false)
+	body := `{"input":"hello","tool_choice":"required","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`
+	for _, stream := range []bool{false, true} {
+		requestBody := body
+		if stream {
+			requestBody = strings.TrimSuffix(body, "}") + `,"stream":true}`
+		}
+		w := responsesRequest(h, "/v1/responses", requestBody, "secret")
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "plain answer") ||
+			strings.Contains(w.Body.String(), `"type":"function_call"`) {
+			t.Errorf("stream=%v: status %d: %s", stream, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	h := responsesHandler(t, "hello", "stop", false)
 	for _, body := range []string{
