@@ -165,6 +165,21 @@ func TestChatAcceptsClientMetadata(t *testing.T) {
 	}
 }
 
+func TestChatTextResponseFormat(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	for _, format := range []string{`null`, `{"type":"text"}`} {
+		body := `{"messages":[{"role":"user","content":"hi"}],"response_format":` + format + `}`
+		w := responsesRequest(h, "/v1/chat/completions", body, "secret")
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"content":"hello"`) {
+			t.Errorf("%s: %d %s", format, w.Code, w.Body.String())
+		}
+	}
+	w := responsesRequest(h, "/v1/chat/completions", `{"messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_object"}}`, "secret")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported structured format: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestResponsesParallelToolCallsFalse(t *testing.T) {
 	h := responsesHandler(t, "hello", "stop", false)
 	for _, stream := range []string{"false", "true"} {

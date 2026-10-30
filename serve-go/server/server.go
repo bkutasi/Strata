@@ -225,6 +225,14 @@ func (s *server) decode(data []byte) (requestnorm.Result, options, error) {
 			// Python ignores this field and always includes usage in the final chunk.
 		case "user", "metadata", "service_tier", "safety_identifier", "prompt_cache_key":
 			// Python accepts these client metadata fields without changing generation.
+		case "response_format":
+			if v.Kind() != requestnorm.Null {
+				kind, ok := v.Lookup("type")
+				text, isString := kind.Text()
+				if v.Kind() != requestnorm.Object || !ok || !isString || kind.Kind() != requestnorm.String || text != "text" {
+					return requestnorm.Result{}, o, errors.New("structured response_format is not supported")
+				}
+			}
 		case "max_tokens", "max_completion_tokens":
 			if maxSet {
 				return requestnorm.Result{}, o, errors.New("provide only one max token field")
