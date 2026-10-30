@@ -54,10 +54,6 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 			if b, _ := v.Bool(); b {
 				err = errors.New("stored responses are not supported")
 			}
-		case "parallel_tool_calls":
-			if b, ok := v.Bool(); ok && !b {
-				err = errors.New("parallel_tool_calls=false is not supported")
-			}
 		case "max_output_tokens":
 			if v.Kind() != requestnorm.Null {
 				text, ok := v.Integer()

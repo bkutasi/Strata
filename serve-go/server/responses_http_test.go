@@ -133,6 +133,17 @@ func TestResponsesErrorsAndChatRegression(t *testing.T) {
 	}
 }
 
+func TestResponsesParallelToolCallsFalse(t *testing.T) {
+	h := responsesHandler(t, "hello", "stop", false)
+	for _, stream := range []string{"false", "true"} {
+		body := `{"input":"hello","parallel_tool_calls":false,"stream":` + stream + `}`
+		w := responsesRequest(h, "/v1/responses", body, "secret")
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"parallel_tool_calls":false`) {
+			t.Errorf("stream=%s: %d %s", stream, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestResponsesStreamLengthAndIncompleteTool(t *testing.T) {
 	h := responsesHandler(t, "partial", "length", false)
 	w := responsesRequest(h, "/v1/responses", `{"input":"x","stream":true}`, "secret")
