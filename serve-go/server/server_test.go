@@ -25,7 +25,7 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 	switch os.Args[3] {
-	case "engine":
+	case "engine", "engine-tool":
 		fmt.Println("READY 4096 stop")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -33,10 +33,14 @@ func TestHelperProcess(t *testing.T) {
 				os.Exit(0)
 			}
 			if strings.HasPrefix(scanner.Text(), "GEN ") {
-				for _, b := range []byte("hello STOPhidden") {
+				text := "hello STOPhidden"
+				if os.Args[3] == "engine-tool" {
+					text = "<tool_call><function=lookup><parameter=x>7</parameter></function></tool_call>"
+				}
+				for _, b := range []byte(text) {
 					fmt.Printf("T %d\n", b)
 				}
-				fmt.Println("DONE 16 2 1 1 stop")
+				fmt.Printf("DONE %d 2 1 1 stop\n", len(text))
 			}
 		}
 		os.Exit(0)
@@ -86,6 +90,10 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 }
 
 func setup(t *testing.T) (http.Handler, *engine.Engine) {
+	return setupEngine(t, "engine")
+}
+
+func setupEngine(t *testing.T, mode string) (http.Handler, *engine.Engine) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -94,7 +102,7 @@ func setup(t *testing.T) (http.Handler, *engine.Engine) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := engine.Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "engine"}, io.Discard)
+	eng, err := engine.Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", mode}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +195,49 @@ func TestRendererRequired(t *testing.T) {
 	tok, _ := syntheticTokenizer(t)
 	if _, err := NewTemplateRenderer(t.TempDir(), tok); err == nil {
 		t.Fatal("missing renderer accepted")
+	}
+}
+
+func TestHTTPToolCall(t *testing.T) {
+	h, _ := setupEngine(t, "engine-tool")
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":100,"chat_template_kwargs":{"enable_thinking":false},"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"x":{"type":"integer"}}}}}]}`
+	status, raw := request(t, ts.Client(), ts.URL+"/v1/chat/completions", body, "secret")
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, raw)
+	}
+	var response struct {
+		Choices []struct {
+			Finish  string `json:"finish_reason"`
+			Message struct {
+				Calls []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Choices) != 1 || response.Choices[0].Finish != "tool_calls" || len(response.Choices[0].Message.Calls) != 1 {
+		t.Fatalf("tool response: %s", raw)
+	}
+	call := response.Choices[0].Message.Calls[0]
+	var arguments map[string]int
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &arguments); err != nil || call.ID == "" ||
+		call.Function.Name != "lookup" || arguments["x"] != 7 {
+		t.Fatalf("tool call: %#v, arguments: %v, error: %v", call, arguments, err)
+	}
+	streamBody := strings.TrimSuffix(body, "}") + `,"stream":true}`
+	status, raw = request(t, ts.Client(), ts.URL+"/v1/chat/completions", streamBody, "secret")
+	if status != http.StatusOK || !strings.Contains(raw, `"name":"lookup"`) ||
+		!strings.Contains(raw, `"finish_reason":"tool_calls"`) || !strings.Contains(raw, "data: [DONE]") {
+		t.Fatalf("streamed tool response %d: %s", status, raw)
 	}
 }
 
