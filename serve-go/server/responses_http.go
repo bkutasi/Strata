@@ -145,6 +145,7 @@ func (s *server) responses(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "server_error", "renderer failed")
 		return
 	}
+	s.applyQwenSamplingDefaults(&o.sampling, rendered.Thinking)
 	if len(rendered.Prompt) > s.cfg.MaxPromptBytes {
 		fail(w, 400, "invalid_request_error", "prompt too large")
 		return

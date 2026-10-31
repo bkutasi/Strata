@@ -90,6 +90,29 @@ func applySamplingDefaults(s *engine.Sampling, defaults engine.Sampling, root re
 	}
 }
 
+func (s *server) applyQwenSamplingDefaults(sampling *engine.Sampling, thinking bool) {
+	if s.cfg.Family != requestnorm.FamilyQwen {
+		return
+	}
+	// Match Python's qwen4exp fallback when the config has no model architecture.
+	temperature, topP := 1.0, 0.95
+	if !thinking {
+		temperature, topP = 0.7, 0.8
+		if sampling.PresencePenalty == nil {
+			sampling.PresencePenalty = floatPtr(1.5)
+		}
+	}
+	if sampling.Temperature == nil {
+		sampling.Temperature = &temperature
+	}
+	if sampling.TopP == nil {
+		sampling.TopP = &topP
+	}
+	if sampling.TopK == nil {
+		sampling.TopK = intPtr(20)
+	}
+}
+
 func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value requestnorm.Value) error {
 	if name == "top_k" {
 		n, err := samplingInteger(name, value)
@@ -152,7 +175,7 @@ func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value 
 	switch name {
 	case "temperature":
 		if *n <= 0 {
-			return nil
+			*n = 0
 		}
 		if *n > math.MaxFloat32 {
 			return fmt.Errorf("%s is out of range", name)
@@ -162,9 +185,10 @@ func setSampling(s *engine.Sampling, root requestnorm.Value, name string, value 
 		if *n <= 0 {
 			return fmt.Errorf("%s is out of range", name)
 		}
-		if *n < 1 {
-			s.TopP = n
+		if *n > 1 {
+			*n = 1
 		}
+		s.TopP = n
 	case "min_p":
 		if *n > 0 && *n <= 1 {
 			s.MinP = n

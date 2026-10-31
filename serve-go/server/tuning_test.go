@@ -44,8 +44,10 @@ func TestTuningRequestAndDefaults(t *testing.T) {
 		} {
 			body := `{` + api.prefix + test.field + `}`
 			w := responsesRequest(h, "http://127.0.0.1"+api.path, body, "")
-			if w.Code != http.StatusOK || !reflect.DeepEqual(eng.sampling, test.want) {
-				t.Fatalf("%s %s status=%d got=%#v want=%#v body=%s", api.path, test.field, w.Code, eng.sampling, test.want, w.Body)
+			want := test.want
+			want.Temperature, want.TopP, want.TopK, want.PresencePenalty = floatPtr(0.7), floatPtr(0.8), intPtr(20), floatPtr(1.5)
+			if w.Code != http.StatusOK || !reflect.DeepEqual(eng.sampling, want) {
+				t.Fatalf("%s %s status=%d got=%#v want=%#v body=%s", api.path, test.field, w.Code, eng.sampling, want, w.Body)
 			}
 		}
 	}

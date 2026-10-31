@@ -41,6 +41,9 @@ streamed. Image support and renderer limits are described below. Other
 endpoints and model families are not implemented.
 Chat, Responses and Anthropic sampling supports temperature, top-p, top-k, min-p, repetition,
 frequency and presence penalties, penalty window, and seed.
+For Qwen, the fallback matches Python's `qwen4exp` defaults: thinking uses temperature
+1.0, top-p 0.95 and top-k 20; without thinking it uses temperature 0.7, top-p 0.8,
+top-k 20 and presence penalty 1.5. Config and request values override these defaults.
 Chat, Responses and Anthropic requests also accept `logit_bias` as an object
 or a list of token-ID and bias pairs. It requires a native engine that
 advertises bias support and is not using continuous batching; unsupported

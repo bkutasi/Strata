@@ -78,16 +78,12 @@ func ParseSamplingDefaults(data []byte) (engine.Sampling, error) {
 			if value < 0 || value > math.MaxFloat32 {
 				return out, errors.New("sampling.temperature: expected a number >= 0 representable by the engine")
 			}
-			if value != 0 {
-				out.Temperature = floatPtr(value)
-			}
+			out.Temperature = floatPtr(value)
 		case "top_p":
 			if value <= 0 || value > 1 || value < math.SmallestNonzeroFloat32 {
 				return out, errors.New("sampling.top_p: expected 0 < top_p <= 1 representable by the engine")
 			}
-			if value != 1 {
-				out.TopP = floatPtr(value)
-			}
+			out.TopP = floatPtr(value)
 		case "min_p":
 			if value < 0 || value > 1 {
 				return out, errors.New("sampling.min_p: expected 0 <= min_p <= 1")
@@ -119,9 +115,7 @@ func ParseSamplingDefaults(data []byte) (engine.Sampling, error) {
 			if value < 0 || value > math.MaxFloat32 {
 				return out, errors.New("sampling.presence_penalty: expected a number >= 0 representable by the engine")
 			}
-			if value != 0 {
-				out.PresencePenalty = floatPtr(value)
-			}
+			out.PresencePenalty = floatPtr(value)
 		case "penalty_last_n":
 			n, err := parseConfigInteger(raw, value)
 			if err != nil || !n.IsInt64() || n.Int64() < 0 || n.Int64() > math.MaxInt32 {

@@ -49,9 +49,9 @@ func TestHelperProcess(t *testing.T) {
 					continue
 				}
 				expected := map[string]string{
-					"engine-topk-20":      "GEN 32 top_k=20 72,105",
-					"engine-topk-64":      "GEN 32 top_k=64 72,105",
-					"engine-topk-default": "GEN 32 72,105",
+					"engine-topk-20":      "GEN 32 temperature=0.7 top_p=0.8 top_k=20 penalty_present=1.5 penalty_last_n=64 72,105",
+					"engine-topk-64":      "GEN 32 temperature=0.7 top_p=0.8 top_k=64 penalty_present=1.5 penalty_last_n=64 72,105",
+					"engine-topk-default": "GEN 32 temperature=0.7 top_p=0.8 top_k=20 penalty_present=1.5 penalty_last_n=64 72,105",
 					"engine-sampling":     "GEN 32 temperature=0.7 top_p=0.9 top_k=20 min_p=0.1 penalty_repeat=1.1 penalty_freq=-0.5 penalty_present=0.2 penalty_last_n=16 seed=123 72,105",
 				}
 				if want, ok := expected[os.Args[3]]; ok && scanner.Text() != want {

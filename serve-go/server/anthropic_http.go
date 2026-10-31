@@ -39,6 +39,7 @@ func (s *server) anthropic(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "server_error", "renderer failed")
 		return
 	}
+	s.applyQwenSamplingDefaults(&opt.sampling, rendered.Thinking)
 	ids, err := s.cfg.Tokenizer.EncodeWithBudget(rendered.Prompt, true, rendered.Plain, s.cfg.MaxPromptBytes)
 	if err != nil || len(ids) == 0 {
 		fail(w, 400, "invalid_request_error", "invalid rendered prompt")

@@ -13,7 +13,9 @@ func TestParseSamplingDefaultsValid(t *testing.T) {
 		want map[string]any
 	}{
 		{"null block", `null`, map[string]any{}},
-		{"null values and off values", `{"temperature":0,"top_p":1,"min_p":0,"repetition_penalty":1,"frequency_penalty":0,"presence_penalty":0,"penalty_last_n":0}`, map[string]any{}},
+		{"null values and off values", `{"temperature":0,"top_p":1,"min_p":0,"repetition_penalty":1,"frequency_penalty":0,"presence_penalty":0,"penalty_last_n":0}`, map[string]any{
+			"temperature": float64(0), "top_p": float64(1), "presence_penalty": float64(0),
+		}},
 		{"positive defaults and aliases", `{"temperature":0.7,"top_p":0.9,"top_k":12.0,"min_p":0.1,"repeat_penalty":1.2,"frequency_penalty":0.2,"presence_penalty":0.3,"repeat_last_n":128.0,"seed":42}`, map[string]any{
 			"temperature": float64(0.7), "top_p": float64(0.9), "top_k": int(12), "min_p": float64(0.1),
 			"repetition_penalty": float64(1.2), "frequency_penalty": float64(0.2), "presence_penalty": float64(0.3),

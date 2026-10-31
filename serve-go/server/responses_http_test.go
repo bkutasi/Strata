@@ -321,20 +321,18 @@ func TestResponsesAdditionalSampling(t *testing.T) {
 	for _, tc := range []struct {
 		value string
 		want  int
-		unset bool
 	}{
-		{"0", 64, false},
-		{"100", 64, false},
-		{"-1", 0, true},
-		{"null", 0, true},
-		{`"4.0"`, 4, false},
+		{"0", 64},
+		{"100", 64},
+		{"-1", 20},
+		{"null", 20},
+		{`"4.0"`, 4},
 	} {
 		w := responsesRequest(h, "/v1/responses", `{"input":"Hi","top_k":`+tc.value+`}`, "secret")
 		eng.mu.Lock()
 		got := eng.got.TopK
 		eng.mu.Unlock()
-		if w.Code != http.StatusOK || (tc.unset && got != nil) ||
-			(!tc.unset && (got == nil || *got != tc.want)) {
+		if w.Code != http.StatusOK || got == nil || *got != tc.want {
 			t.Errorf("top_k=%s: status %d, top_k %v: %s", tc.value, w.Code, got, w.Body.String())
 		}
 	}
