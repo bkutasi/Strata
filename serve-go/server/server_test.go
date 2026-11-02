@@ -38,6 +38,15 @@ func TestHelperProcess(t *testing.T) {
 					fmt.Println("T 104")
 					if scanner.Scan() && scanner.Text() == "STOP" {
 						fmt.Println("DONE 1 2 1 1 cancel")
+						// Kept alive after a STOP-acknowledged cancel: serve the
+						// recovery request on the same process, like the engine.
+						if scanner.Scan() && strings.HasPrefix(scanner.Text(), "GEN ") {
+							text := "hello STOPhidden"
+							for _, b := range []byte(text) {
+								fmt.Printf("T %d\n", b)
+							}
+							fmt.Printf("DONE %d 2 1 1 stop\n", len(text))
+						}
 					}
 					continue
 				}
@@ -175,20 +184,6 @@ func setupFamilyEngineWithRouteOptions(t *testing.T, mode string, family request
 		_ = eng.Close(ctx)
 	})
 	var servingEngine Engine = eng
-	if mode == "engine-cancel" {
-		supervisor, err := engine.Supervise(eng, func(ctx context.Context) (*engine.Engine, error) {
-			return engine.Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "engine"}, io.Discard)
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = supervisor.Close(ctx)
-		})
-		servingEngine = supervisor
-	}
 	h, err := New(Config{Model: "test", Aliases: aliases, Family: family, Tokenizer: tok, Engine: servingEngine, Renderer: renderer, APIKeys: []string{"secret"}, MaxBody: 4096, MaxPromptBytes: 2048, MaxOutputTokens: 200, MaxConcurrent: 2, DisableResponses: disableResponses, DisableAnthropic: disableAnthropic})
 	if err != nil {
 		t.Fatal(err)

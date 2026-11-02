@@ -373,11 +373,16 @@ func TestHelperProcess(t *testing.T) {
 			case "callback-error", "callback-cancel", "callback-panic":
 				fmt.Println("T 42")
 				if mode == "callback-cancel" {
-					if !s.Scan() || s.Text() != "STOP" {
-						os.Exit(2)
+					if requests == 1 {
+						if !s.Scan() || s.Text() != "STOP" {
+							os.Exit(2)
+						}
+						fmt.Fprintln(os.Stdout, "T 43")
+						fmt.Fprintln(os.Stdout, "DONE 2 2 1 2 cancel")
+					} else {
+						fmt.Fprintln(os.Stdout, "T 43")
+						fmt.Fprintln(os.Stdout, "DONE 2 2 1 2 stop")
 					}
-					fmt.Println("T 43")
-					fmt.Println("DONE 2 2 1 2 cancel")
 				} else {
 					_, _ = io.Copy(io.Discard, os.Stdin)
 				}
@@ -410,6 +415,21 @@ func TestHelperProcess(t *testing.T) {
 				fmt.Println("T not-an-id")
 			case "cancel":
 				fmt.Fprintln(os.Stderr, "request accepted")
+				if requests == 1 {
+					// First generation: block until STOP so the test's cancel races it.
+					for s.Scan() {
+						if s.Text() == "QUIT" {
+							os.Exit(0)
+						}
+						if s.Text() == "STOP" {
+							break
+						}
+					}
+					fmt.Fprintln(os.Stdout, "DONE 0 2 0 1 cancel 0 0 0 0 0")
+				} else {
+					// Reuse after a STOP-acknowledged cancel: answer at once.
+					fmt.Fprintln(os.Stdout, "DONE 0 2 0 1 stop 0 0 0 0 0")
+				}
 			default:
 				if line != "GEN 3 12,34" {
 					fmt.Println("ERR unexpected command")
@@ -565,7 +585,7 @@ func TestStopGenerationDrainsAndReusesEngine(t *testing.T) {
 	}
 }
 
-func TestCancellationAfterStopDiscardsEngine(t *testing.T) {
+func TestCancellationAfterStopKeepsEngine(t *testing.T) {
 	var stderr bytes.Buffer
 	e := startFake(t, "early-stop", &stderr)
 	ctx, cancel := context.WithCancel(testContext(t))
@@ -576,8 +596,11 @@ func TestCancellationAfterStopDiscardsEngine(t *testing.T) {
 			return ErrStopGeneration
 		},
 	})
-	if !errors.Is(err, context.Canceled) || e.Alive() {
+	if !errors.Is(err, context.Canceled) || !e.Alive() {
 		t.Fatalf("error=%v alive=%v", err, e.Alive())
+	}
+	if _, err := e.Generate(testContext(t), []int{1}, 1); err != nil {
+		t.Fatalf("kept engine could not serve: %v", err)
 	}
 }
 
@@ -625,7 +648,7 @@ func (c *cancelOnFinalCheck) Err() error {
 	return c.Context.Err()
 }
 
-func TestCancellationAtDoneDiscardsChild(t *testing.T) {
+func TestCancellationAtDoneKeepsEngine(t *testing.T) {
 	var stderr bytes.Buffer
 	e := startFake(t, "done-only", &stderr)
 	base, cancel := context.WithCancel(testContext(t))
@@ -635,13 +658,11 @@ func TestCancellationAtDoneDiscardsChild(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || r.Finish != "stop" {
 		t.Fatalf("result %#v, error %v", r, err)
 	}
-	select {
-	case <-e.exited:
-	case <-testContext(t).Done():
-		t.Fatal("cancelled child not reaped")
+	if !e.Alive() {
+		t.Fatal("STOP-acknowledged cancel discarded a reusable engine")
 	}
-	if _, err := e.Generate(testContext(t), []int{1}, 1); !errors.Is(err, ErrClosed) {
-		t.Fatalf("cancelled engine reused: %v", err)
+	if _, err := e.Generate(testContext(t), []int{1}, 1); err != nil {
+		t.Fatalf("kept engine could not serve: %v", err)
 	}
 }
 
@@ -871,6 +892,12 @@ func TestCallbackFailureAndCancellation(t *testing.T) {
 			if mode == "callback-cancel" && (fmt.Sprint(r.Tokens) != "[42 43]" || r.Finish != "cancel") {
 				t.Fatalf("drained result %#v", r)
 			}
+			if mode == "callback-cancel" {
+				if !e.Alive() {
+					t.Fatal("STOP-acknowledged cancel discarded a reusable engine")
+				}
+				return
+			}
 			select {
 			case <-e.exited:
 			case <-testContext(t).Done():
@@ -995,11 +1022,17 @@ func TestFailuresInvalidateProcess(t *testing.T) {
 	}
 }
 
-type signalWriter struct{ accepted chan struct{} }
+type signalWriter struct {
+	accepted chan struct{}
+}
 
 func (w signalWriter) Write(p []byte) (int, error) {
 	if strings.Contains(string(p), "request accepted") {
-		close(w.accepted)
+		select {
+		case <-w.accepted:
+		default:
+			close(w.accepted)
+		}
 	}
 	return len(p), nil
 }
@@ -1034,10 +1067,11 @@ func TestCancellationSendsStop(t *testing.T) {
 	case <-testContext(t).Done():
 		t.Fatal("cancellation did not complete")
 	}
-	select {
-	case <-e.exited:
-	case <-testContext(t).Done():
-		t.Fatal("cancelled child not reaped")
+	if !e.Alive() {
+		t.Fatal("STOP-acknowledged cancel discarded a reusable engine")
+	}
+	if _, err := e.Generate(testContext(t), []int{1}, 3); err != nil {
+		t.Fatalf("kept engine could not serve: %v", err)
 	}
 }
 

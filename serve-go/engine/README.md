@@ -6,8 +6,10 @@ with token IDs and a maximum output count. `Start` accepts INFO and READY;
 `Generate` reads T and DONE, ignores PP, RESUME and REUSED, and reports ERR. Stderr
 goes to the supplied writer, never into the protocol. `Close` sends QUIT.
 Calls are serialized. Context cancellation sends STOP when READY advertised it,
-uses a bounded STOP write and waits up to one second for DONE, and discards the
-process even on acknowledgement. A cancelled GEN write kills the child.
+uses a bounded STOP write and a bounded drain to DONE, and keeps the process
+for the next request, matching the Python server. The process is discarded only
+when STOP fails, the drain times out, or STOP is unsupported. A cancelled GEN
+write kills the child.
 The process is also discarded on ERR, malformed or unsupported records, or EOF:
 native errors may or may not have a trailing DONE, and fatal verification errors
 must not be followed by another request. Callers must start a new engine.
@@ -36,8 +38,8 @@ Other callback errors immediately kill and discard the child, returning the
 error and tokens collected so far.
 A callback panic also discards the child and propagates to the caller.
 On cancellation no callbacks run after cancellation is observed; tokens drained
-before DONE remain in the result. The caller must start a new engine after
-either case.
+before DONE remain in the result, and the drained engine serves the next
+request.
 
 This does not implement image requests, logit bias, log probabilities or
 allowed-token constraints, batch slots, checkpoints or session commands,

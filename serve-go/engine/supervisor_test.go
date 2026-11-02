@@ -108,7 +108,7 @@ func TestSupervisorLogitBiasRestartsSupportedEngine(t *testing.T) {
 	}
 }
 
-func TestSupervisorRestartsOnceAfterCancellation(t *testing.T) {
+func TestSupervisorReusesEngineAfterCancellation(t *testing.T) {
 	initial, err := Start(testContext(t), os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "callback-cancel"}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
@@ -135,8 +135,8 @@ func TestSupervisorRestartsOnceAfterCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled generation: %v", err)
 	}
-	if s.Alive() {
-		t.Fatal("discarded engine reported alive")
+	if !s.Alive() {
+		t.Fatal("STOP-acknowledged cancel discarded a reusable engine")
 	}
 	var wg sync.WaitGroup
 	failures := make(chan error, 4)
@@ -156,7 +156,7 @@ func TestSupervisorRestartsOnceAfterCancellation(t *testing.T) {
 	for err := range failures {
 		t.Error(err)
 	}
-	if starts.Load() != 1 || !s.Alive() || s.ContextLimit() != 4096 {
+	if starts.Load() != 0 || !s.Alive() || s.ContextLimit() != 4096 {
 		t.Fatalf("starts %d, alive %t, context %d", starts.Load(), s.Alive(), s.ContextLimit())
 	}
 	if err := s.Close(testContext(t)); err != nil {

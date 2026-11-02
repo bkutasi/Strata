@@ -481,8 +481,10 @@ func samplingKeys(s Sampling) (string, error) {
 }
 
 // Generate sends a greedy text-only GEN. Cancellation sends STOP if advertised,
-// then waits at most one second for DONE before killing the process. A cancelled
-// request always discards the process: STOP can race native request admission.
+// then drains DONE and keeps the engine for the next request, matching the
+// Python server. The process is discarded only when STOP fails, times out, or
+// is unsupported. STOP sent before admission is cleared by the engine between
+// requests, so it cannot leak into the next one.
 func (e *Engine) Generate(ctx context.Context, ids []int, maxNew int) (Result, error) {
 	return e.GenerateWithOptions(ctx, ids, maxNew, RequestOptions{})
 }
@@ -533,9 +535,10 @@ func generationImageCommand(ids []int, maxNew int, keys, embeddingsPath string) 
 // GenerateWithOptions sends GEN or GENI. ErrStopGeneration from a callback
 // stops and drains the request; other callback errors discard the process once
 // generation starts. Errors while queued leave the active engine untouched.
-// Cancellation has the same STOP and discard behavior as Generate; no further
-// callbacks run after cancellation is observed. A callback panic during
-// generation discards the process and propagates. Callbacks must return promptly.
+// Cancellation sends STOP and drains DONE so the process serves the next
+// request, like Generate; no further callbacks run after cancellation is
+// observed. A callback panic during generation discards the process and
+// propagates. Callbacks must return promptly.
 func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int, opts RequestOptions) (Result, error) {
 	var result Result
 	keys, err := samplingKeys(opts.Sampling)
@@ -876,7 +879,10 @@ func (e *Engine) GenerateWithOptions(ctx context.Context, ids []int, maxNew int,
 					return result, err
 				}
 				if cancelled != nil {
-					e.abort()
+					// A STOP-acknowledged cancel leaves the drained engine for
+					// the next request, like Python's STOP-and-drain. The
+					// engine clears a between-request STOP, so no stale stop
+					// leaks into it. Keep RSS flat: no extra state or buffers.
 					return result, cancelled
 				}
 				if err := ctx.Err(); err != nil {
