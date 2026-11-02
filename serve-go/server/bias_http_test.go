@@ -30,7 +30,7 @@ func (e *biasCapture) GenerateWithOptions(_ context.Context, _ []int, _ int, opt
 }
 
 func TestChatLogitBiasHTTP(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &biasCapture{supported: true}
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
@@ -65,7 +65,7 @@ func TestChatLogitBiasHTTP(t *testing.T) {
 }
 
 func TestOtherAPIsLogitBiasHTTP(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &biasCapture{supported: true}
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,

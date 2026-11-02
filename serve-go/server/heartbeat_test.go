@@ -52,7 +52,7 @@ func TestStreamPromptProgress(t *testing.T) {
 		{"responses", "/v1/responses", `{"input":"hi","max_output_tokens":32,"stream":true}`, "A"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tok, _ := syntheticTokenizer(t)
+			tok := sharedTokenizer(t)
 			release := make(chan struct{})
 			h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 				Engine: heartbeatEngine{release: release, text: tc.text}, Renderer: contextRenderer{}, MaxBody: 8192,
@@ -62,7 +62,7 @@ func TestStreamPromptProgress(t *testing.T) {
 			}
 			ts := httptest.NewServer(h)
 			defer ts.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+tc.path, strings.NewReader(tc.body))
 			if err != nil {
@@ -99,7 +99,7 @@ func TestStreamPromptProgress(t *testing.T) {
 }
 
 func TestStreamProgressCancellation(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	cancelled := make(chan struct{})
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: heartbeatEngine{release: make(chan struct{}), cancelled: cancelled}, Renderer: contextRenderer{},
@@ -109,7 +109,7 @@ func TestStreamProgressCancellation(t *testing.T) {
 	}
 	ts := httptest.NewServer(h)
 	defer ts.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+"/v1/chat/completions",
 		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}],"max_tokens":32,"stream":true}`))
@@ -136,7 +136,7 @@ func TestStreamProgressCancellation(t *testing.T) {
 	resp.Body.Close()
 	select {
 	case <-cancelled:
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("engine did not receive cancellation after progress")
 	}
 }

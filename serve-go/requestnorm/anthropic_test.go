@@ -23,6 +23,42 @@ type anthCase struct {
 	API          string          `json:"api,omitempty"`
 }
 
+var (
+	anthropicOracleMu    sync.Mutex
+	anthropicOracleCache map[string]anthropicOracleResult
+)
+
+type anthropicOracleResult struct {
+	output []byte
+	stderr string
+}
+
+func cachedAnthropicOracle(t *testing.T, python, input string) anthropicOracleResult {
+	t.Helper()
+	key := python + "\x00" + input
+	anthropicOracleMu.Lock()
+	defer anthropicOracleMu.Unlock()
+	if anthropicOracleCache == nil {
+		anthropicOracleCache = map[string]anthropicOracleResult{}
+	}
+	if cached, found := anthropicOracleCache[key]; found {
+		return cached
+	}
+	var stdin bytes.Buffer
+	stdin.WriteString(input)
+	cmd := exec.Command(python, "anth_oracle.py")
+	cmd.Stdin = &stdin
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reference failed: %v: %s", err, stderr.String())
+	}
+	result := anthropicOracleResult{output: output, stderr: stderr.String()}
+	anthropicOracleCache[key] = result
+	return result
+}
+
 func anth(name, request string) anthCase {
 	return anthCase{Name: name, Family: FamilyQwen, Request: json.RawMessage(request), ThinkUnasked: true}
 }
@@ -99,26 +135,20 @@ func TestAnthropicDifferential(t *testing.T) {
 	cases = append(cases, anth("oversized budget string",
 		`{"thinking":{"type":"enabled","budget_tokens":"`+strings.Repeat("0", 4301)+`"}}`))
 
-	var stdin bytes.Buffer
+	var rawInput bytes.Buffer
 	for _, c := range cases {
-		if err := json.NewEncoder(&stdin).Encode(c); err != nil {
+		if err := json.NewEncoder(&rawInput).Encode(c); err != nil {
 			t.Fatalf("%s: %v", c.Name, err)
 		}
 	}
-	cmd := exec.Command(python, "anth_oracle.py")
-	cmd.Stdin = &stdin
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("reference failed: %v: %s", err, stderr.String())
-	}
+	oracleOut := cachedAnthropicOracle(t, python, rawInput.String())
+	output, stderrText := oracleOut.output, oracleOut.stderr
 	norms := make(map[Family]*Normalizer)
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	for _, c := range cases {
 		if !scanner.Scan() {
-			t.Fatalf("%s: reference stopped: %v; stderr: %s", c.Name, scanner.Err(), stderr.String())
+			t.Fatalf("%s: reference stopped: %v; stderr: %s", c.Name, scanner.Err(), stderrText)
 		}
 		var ref struct {
 			Result json.RawMessage `json:"result"`
@@ -130,9 +160,10 @@ func TestAnthropicDifferential(t *testing.T) {
 		}
 		n := norms[c.Family]
 		if n == nil {
-			n, err = NewNormalizer(c.Family)
-			if err != nil {
-				t.Fatal(err)
+			var normErr error
+			n, normErr = NewNormalizer(c.Family)
+			if normErr != nil {
+				t.Fatal(normErr)
 			}
 			norms[c.Family] = n
 		}

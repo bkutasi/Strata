@@ -43,7 +43,7 @@ func (r responsesRenderer) Render(context.Context, requestnorm.Result) (Rendered
 
 func responsesHandler(t *testing.T, text, finish string, thinking bool) http.Handler {
 	t.Helper()
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: responsesEngine{text: text, finish: finish}, Renderer: responsesRenderer{thinking: thinking},
 		APIKeys: []string{"secret"}, MaxBody: 8192, MaxPromptBytes: 2048, MaxOutputTokens: 512, MaxConcurrent: 2})
@@ -98,7 +98,7 @@ func TestResponsesTextAndReasoning(t *testing.T) {
 }
 
 func TestRepeatStopAcrossAPIs(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	for _, tc := range []struct {
 		limit      int
 		wantText   string
@@ -150,7 +150,7 @@ func (e *samplingCapture) GenerateWithOptions(_ context.Context, _ []int, _ int,
 }
 
 func TestResponsesNumericStringSampling(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &samplingCapture{}
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: responsesRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
@@ -236,7 +236,7 @@ func TestResponsesCustomToolCalls(t *testing.T) {
 }
 
 func TestResponsesHostedToolsAreLeftOut(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	for _, tc := range []struct {
 		tools      string
 		text       string
@@ -291,7 +291,7 @@ func TestResponsesNumericStringSamplingValidation(t *testing.T) {
 }
 
 func TestResponsesAdditionalSampling(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &samplingCapture{}
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: responsesRenderer{}, APIKeys: []string{"secret"}, MaxBody: 8192, MaxPromptBytes: 2048,

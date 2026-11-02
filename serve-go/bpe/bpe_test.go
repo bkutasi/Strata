@@ -16,6 +16,37 @@ import (
 
 func identity(s string) []string { return []string{s} }
 
+var (
+	bpeOracleMu    sync.Mutex
+	bpeOracleCache map[string][]byte
+)
+
+// cachedBPEOracle runs the fixed python-oracle script once per key and
+// replays the recorded output. Fatalf stays inside the helper so cached and
+// fresh failures report the same message.
+func cachedBPEOracle(t *testing.T, key, python, script string, args []string, input, failMsg string) []byte {
+	t.Helper()
+	cacheKey := key + "\x00" + python + "\x00" + script + "\x00" + strings.Join(args, "\x00") + "\x00" + input
+	bpeOracleMu.Lock()
+	defer bpeOracleMu.Unlock()
+	if bpeOracleCache == nil {
+		bpeOracleCache = map[string][]byte{}
+	}
+	if cached, found := bpeOracleCache[cacheKey]; found {
+		return cached
+	}
+	full := []string{"-c", script}
+	full = append(full, args...)
+	cmd := exec.Command(python, full...)
+	cmd.Stdin = strings.NewReader(input)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s: %v: %s", failMsg, err, output)
+	}
+	bpeOracleCache[cacheKey] = output
+	return output
+}
+
 func TestMergeRanksGroupedAndDuplicate(t *testing.T) {
 	tokens := []string{"a", "b", "c", "d", "e", "ab", "bc"}
 	merges := []string{"d e", "a d", "a c", "a b", "c a", "b c", "a b", "a a", "d a", "a d"}
@@ -665,12 +696,7 @@ for s in data["Samples"]:
                 "Decoded": tok.decode(s["Bytes"])})
 json.dump(out, sys.stdout)
 `
-	cmd := exec.Command(python, "-c", script, root)
-	cmd.Stdin = strings.NewReader(string(input))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Python reference: %v: %s", err, output)
-	}
+	output := cachedBPEOracle(t, "synthetic:"+root, python, script, []string{root}, string(input), "Python reference")
 	var expected []result
 	if err := json.Unmarshal(output, &expected); err != nil {
 		t.Fatal(err)
@@ -738,12 +764,7 @@ for x in json.load(sys.stdin):
  spans=[(len(s.encode()[:p["Start"]].decode()),len(s.encode()[:p["End"]].decode())) for p in (x["plain"] or [])]
  out.append(tok.encode(s,x["special"],spans))
 json.dump(out,sys.stdout)`
-	cmd := exec.Command(python, "-c", script, dir, root)
-	cmd.Stdin = strings.NewReader(string(input))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("reference: %v: %s", err, output)
-	}
+	output := cachedBPEOracle(t, "pack:"+dir+"\x00"+root, python, script, []string{dir, root}, string(input), "reference")
 	var want [][]int
 	if err := json.Unmarshal(output, &want); err != nil {
 		t.Fatal(err)

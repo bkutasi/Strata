@@ -17,7 +17,7 @@ func TestProjectionDefaultsAndRequestPrecedence(t *testing.T) {
 		if err != nil || defaults.SpeedProjection == nil || *defaults.SpeedProjection != value {
 			t.Fatalf("default %s: %#v %v", data, defaults, err)
 		}
-		tok, _ := syntheticTokenizer(t)
+		tok := sharedTokenizer(t)
 		eng := &biasCapture{}
 		h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 			Engine: eng, Renderer: contextRenderer{}, DefaultSampling: defaults,

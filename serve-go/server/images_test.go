@@ -271,7 +271,7 @@ func TestVisionGateHonorsCancellation(t *testing.T) {
 	case <-e.entered:
 	case <-done:
 		t.Fatal("first request returned before entering engine")
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("first request did not enter engine")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -286,7 +286,7 @@ func TestVisionGateHonorsCancellation(t *testing.T) {
 	close(e.release)
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("first request did not complete")
 	}
 }

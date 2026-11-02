@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,9 +103,7 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
-func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
-	t.Helper()
-	dir := t.TempDir()
+func writeSyntheticTokenizerDir(dir string) error {
 	vocab := map[string]int{}
 	n := 0
 	for b := 0; b < 256; b++ {
@@ -123,23 +122,35 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 	types[256] = 3
 	types[257] = 3
 	types[258] = 4
-	write := func(name string, v any) {
-		t.Helper()
+	write := func(name string, v any) error {
 		b, e := json.Marshal(v)
 		if e != nil {
-			t.Fatal(e)
+			return e
 		}
-		if e = os.WriteFile(filepath.Join(dir, name), b, 0600); e != nil {
-			t.Fatal(e)
-		}
+		return os.WriteFile(filepath.Join(dir, name), b, 0o600)
 	}
-	write("tokenizer.json", map[string]string{"pre": "qwen35", "model": "gpt2"})
-	write("vocab.json", vocab)
-	write("token_type.json", types)
-	if err := os.WriteFile(filepath.Join(dir, "merges.txt"), []byte("a b"), 0600); err != nil {
-		t.Fatal(err)
+	if err := write("tokenizer.json", map[string]string{"pre": "qwen35", "model": "gpt2"}); err != nil {
+		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "chat_template.jinja"), []byte(`{{ messages[0].content }}`), 0600); err != nil {
+	if err := write("vocab.json", vocab); err != nil {
+		return err
+	}
+	if err := write("token_type.json", types); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "merges.txt"), []byte("a b"), 0o600); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chat_template.jinja"), []byte(`{{ messages[0].content }}`), 0o600); err != nil {
+		return err
+	}
+	return nil
+}
+
+func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := writeSyntheticTokenizerDir(dir); err != nil {
 		t.Fatal(err)
 	}
 	tok, err := modeltokenizer.Load(dir)
@@ -147,6 +158,32 @@ func syntheticTokenizer(t *testing.T) (*modeltokenizer.Tokenizer, string) {
 		t.Fatal(err)
 	}
 	return tok, dir
+}
+
+// sharedSynthetic builds the synthetic tokenizer pack once per test-binary
+// run in a global temp dir (leaked intentionally; cleaned with the OS temp
+// dir). modeltokenizer.Tokenizer is documented immutable and safe for
+// concurrent use, so read-only tests share the single instance. Tests that
+// write into the pack dir must keep using syntheticTokenizer.
+var sharedSynthetic = sync.OnceValues(func() (*modeltokenizer.Tokenizer, string) {
+	dir, err := os.MkdirTemp("", "strata-synth-tok")
+	if err != nil {
+		panic(err)
+	}
+	if err := writeSyntheticTokenizerDir(dir); err != nil {
+		panic(err)
+	}
+	tok, err := modeltokenizer.Load(dir)
+	if err != nil {
+		panic(err)
+	}
+	return tok, dir
+})
+
+func sharedTokenizer(t *testing.T) *modeltokenizer.Tokenizer {
+	t.Helper()
+	tok, _ := sharedSynthetic()
+	return tok
 }
 
 func setup(t *testing.T) (http.Handler, *engine.Engine) {

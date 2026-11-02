@@ -39,7 +39,7 @@ func (responsesProgressEngine) GenerateWithOptions(ctx context.Context, _ []int,
 }
 
 func TestResponsesProgressDuringLongWait(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: responsesProgressEngine{}, Renderer: responsesRenderer{}, MaxBody: 8192,
 		MaxPromptBytes: 2048, MaxOutputTokens: 128, MaxConcurrent: 1})

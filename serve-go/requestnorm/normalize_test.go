@@ -21,6 +21,42 @@ type referenceCase struct {
 	Require bool            `json:"require,omitempty"`
 }
 
+var (
+	normalizeOracleMu    sync.Mutex
+	normalizeOracleCache map[string]normalizeOracleResult
+)
+
+type normalizeOracleResult struct {
+	output []byte
+	stderr string
+}
+
+func cachedNormalizeOracle(t *testing.T, python, input string) normalizeOracleResult {
+	t.Helper()
+	key := python + "\x00" + input
+	normalizeOracleMu.Lock()
+	defer normalizeOracleMu.Unlock()
+	if normalizeOracleCache == nil {
+		normalizeOracleCache = map[string]normalizeOracleResult{}
+	}
+	if cached, found := normalizeOracleCache[key]; found {
+		return cached
+	}
+	var stdin bytes.Buffer
+	stdin.WriteString(input)
+	cmd := exec.Command(python, "oracle.py")
+	cmd.Stdin = &stdin
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reference failed: %v: %s", err, stderr.String())
+	}
+	result := normalizeOracleResult{output: output, stderr: stderr.String()}
+	normalizeOracleCache[key] = result
+	return result
+}
+
 func makeCase(name, request string) referenceCase {
 	return referenceCase{Name: name, Family: FamilyQwen, Request: json.RawMessage(request)}
 }
@@ -96,26 +132,20 @@ func TestOpenAIDifferential(t *testing.T) {
 	}
 	cases = append(cases, makeCase("eviction revisit", `{"tools":[{"name":"evict_a"},{"name":"evict_b"}]}`))
 
-	var stdin bytes.Buffer
+	var rawInput bytes.Buffer
 	for _, c := range cases {
-		if err := json.NewEncoder(&stdin).Encode(c); err != nil {
+		if err := json.NewEncoder(&rawInput).Encode(c); err != nil {
 			t.Fatalf("%s: %v", c.Name, err)
 		}
 	}
-	cmd := exec.Command(python, "oracle.py")
-	cmd.Stdin = &stdin
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("reference failed: %v: %s", err, stderr.String())
-	}
+	oracleOut := cachedNormalizeOracle(t, python, rawInput.String())
+	output, stderrText := oracleOut.output, oracleOut.stderr
 	norms := map[Family]*Normalizer{}
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	for _, c := range cases {
 		if !scanner.Scan() {
-			t.Fatalf("%s: reference stopped: %v; stderr: %s", c.Name, scanner.Err(), stderr.String())
+			t.Fatalf("%s: reference stopped: %v; stderr: %s", c.Name, scanner.Err(), stderrText)
 		}
 		var ref struct {
 			Result json.RawMessage `json:"result"`
@@ -126,9 +156,10 @@ func TestOpenAIDifferential(t *testing.T) {
 		}
 		n := norms[c.Family]
 		if n == nil {
-			n, err = NewNormalizer(c.Family)
-			if err != nil {
-				t.Fatal(err)
+			var normErr error
+			n, normErr = NewNormalizer(c.Family)
+			if normErr != nil {
+				t.Fatal(normErr)
 			}
 			norms[c.Family] = n
 		}

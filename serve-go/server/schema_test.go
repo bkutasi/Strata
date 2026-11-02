@@ -72,7 +72,7 @@ func (r *schemaRenderer) Render(_ context.Context, input requestnorm.Result) (Re
 }
 
 func TestJSONSchemaReachesPrompt(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	renderer := &schemaRenderer{}
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: responsesEngine{text: `{"n":3}`, finish: "stop"}, Renderer: renderer,

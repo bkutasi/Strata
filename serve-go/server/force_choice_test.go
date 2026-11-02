@@ -75,7 +75,7 @@ func TestForcedToolsWithoutThinking(t *testing.T) {
 	for _, family := range []requestnorm.Family{requestnorm.FamilyQwen, requestnorm.FamilyDeepSeek} {
 		for _, api := range []string{"chat", "anthropic"} {
 			t.Run(string(family)+"/"+api, func(t *testing.T) {
-				tok, _ := syntheticTokenizer(t)
+				tok := sharedTokenizer(t)
 				prefix := "<tool_call>\n<function=lookup>\n"
 				reply := "<parameter=query>apples</parameter></function></tool_call>"
 				if family == requestnorm.FamilyDeepSeek {
@@ -148,7 +148,7 @@ func TestForcedToolsWithoutThinking(t *testing.T) {
 }
 
 func TestRequiredChoiceWithMultipleTools(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &forceEngine{tok: tok, reply: "lookup>\n<parameter=query>apples</parameter></function></tool_call>"}
 	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok, Engine: eng,
 		Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048, MaxOutputTokens: 512, MaxConcurrent: 1})
@@ -180,7 +180,7 @@ func TestRequiredChoiceWithMultipleTools(t *testing.T) {
 }
 
 func TestForcedPromptRespectsLimits(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	prompt := Rendered{Prompt: "Hi"}
 	for _, tc := range []struct {
 		rendered Rendered

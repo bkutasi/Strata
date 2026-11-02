@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -22,16 +23,36 @@ func source(t *testing.T, path string) string {
 	return string(b)
 }
 
-func TestGolden(t *testing.T) {
-	python := filepath.Join("..", "..", ".venv", "bin", "python")
-	if _, err := os.Stat(python); err != nil {
-		t.Fatalf("golden tests need project .venv with Jinja2: %v", err)
+var (
+	goldenOracleMu    sync.Mutex
+	goldenOracleCache map[string][]byte
+)
+
+func cachedGoldenOracle(t *testing.T, python string) []byte {
+	t.Helper()
+	goldenOracleMu.Lock()
+	defer goldenOracleMu.Unlock()
+	if goldenOracleCache == nil {
+		goldenOracleCache = map[string][]byte{}
+	}
+	if cached, found := goldenOracleCache[python]; found {
+		return cached
 	}
 	cmd := exec.Command(python, "oracle.py")
 	data, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("golden input oracle: %v", err)
 	}
+	goldenOracleCache[python] = data
+	return data
+}
+
+func TestGolden(t *testing.T) {
+	python := filepath.Join("..", "..", ".venv", "bin", "python")
+	if _, err := os.Stat(python); err != nil {
+		t.Fatalf("golden tests need project .venv with Jinja2: %v", err)
+	}
+	data := cachedGoldenOracle(t, python)
 	qwen, err := New(source(t, "serve/chat_template.jinja"))
 	if err != nil {
 		t.Fatal(err)

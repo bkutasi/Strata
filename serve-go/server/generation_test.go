@@ -11,7 +11,7 @@ import (
 )
 
 func TestGenerateRepeatStop(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	defaultRun := make([]int, 256)
 	for i := range defaultRun {
 		defaultRun[i] = 'x'
@@ -82,7 +82,7 @@ func (p *pumpParser) Finish(reason string) ([]outputparser.Event, error) {
 }
 
 func TestGenerateStopTokenAndStopString(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser := &pumpParser{}
 	var got string
 	out, err := generate(context.Background(), pumpEngine{tokens: []int{'a', 257, 'b'}}, tok, parser, []int{1}, 8, engine.Sampling{}, map[int]bool{257: true}, 0, func(events []outputparser.Event) error {
@@ -112,7 +112,7 @@ func TestGenerateStopTokenAndStopString(t *testing.T) {
 }
 
 func TestGenerateEarlyStopFinishesParserAsStop(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	for _, tc := range []struct {
 		name      string
 		tokens    []int
@@ -138,7 +138,7 @@ func TestGenerateEarlyStopFinishesParserAsStop(t *testing.T) {
 }
 
 func TestGeneratePropagatesParserAndEngineErrors(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	want := errors.New("callback failed")
 	_, err := generate(context.Background(), pumpEngine{tokens: []int{'a'}}, tok, &pumpParser{}, []int{1}, 8, engine.Sampling{}, nil, 0, func([]outputparser.Event) error { return want })
 	if !errors.Is(err, want) {

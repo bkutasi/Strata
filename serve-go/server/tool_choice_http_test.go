@@ -68,7 +68,7 @@ func (r *toolChoiceRenderer) RenderAnthropic(_ context.Context, input requestnor
 func TestToolChoiceHTTP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	tokenizer, _ := syntheticTokenizer(t)
+	tokenizer := sharedTokenizer(t)
 	eng, err := engine.Start(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "engine"}, io.Discard)
 	if err != nil {
 		t.Fatal(err)

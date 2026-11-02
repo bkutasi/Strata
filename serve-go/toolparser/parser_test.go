@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -93,6 +94,36 @@ func TestFramingAndBody(t *testing.T) {
 	}
 }
 
+var (
+	toolOracleMu    sync.Mutex
+	toolOracleCache map[string][]byte
+)
+
+func cachedToolOracle(t *testing.T, python, input string) []byte {
+	t.Helper()
+	key := python + "\x00" + input
+	toolOracleMu.Lock()
+	defer toolOracleMu.Unlock()
+	if toolOracleCache == nil {
+		toolOracleCache = map[string][]byte{}
+	}
+	if cached, found := toolOracleCache[key]; found {
+		return cached
+	}
+	var stdin bytes.Buffer
+	stdin.WriteString(input)
+	cmd := exec.Command(python, "oracle.py")
+	cmd.Stdin = &stdin
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("oracle: %v: %s", err, stderr.String())
+	}
+	toolOracleCache[key] = output
+	return output
+}
+
 func TestDifferential(t *testing.T) {
 	python := filepath.Join("..", "..", ".venv", "bin", "python")
 	if _, err := os.Stat(python); err != nil {
@@ -148,21 +179,14 @@ func TestDifferential(t *testing.T) {
 		requests = append(requests, request{Op: "parse", Text: body, Reject: true},
 			request{Op: "parse", Text: body, Schema: schema})
 	}
-	var input bytes.Buffer
-	enc := json.NewEncoder(&input)
+	var rawInput bytes.Buffer
+	enc := json.NewEncoder(&rawInput)
 	for _, r := range requests {
 		if err := enc.Encode(r); err != nil {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command(python, "oracle.py")
-	cmd.Stdin = &input
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("oracle: %v: %s", err, stderr.String())
-	}
+	output := cachedToolOracle(t, python, rawInput.String())
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	for i, r := range requests {

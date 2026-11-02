@@ -7,8 +7,35 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 )
+
+var (
+	modelTokenizerOracleMu    sync.Mutex
+	modelTokenizerOracleCache map[string][]byte
+)
+
+func cachedModelTokenizerOracle(t *testing.T, python, script, dir, input string) []byte {
+	t.Helper()
+	key := python + "\x00" + script + "\x00" + dir + "\x00" + input
+	modelTokenizerOracleMu.Lock()
+	defer modelTokenizerOracleMu.Unlock()
+	if modelTokenizerOracleCache == nil {
+		modelTokenizerOracleCache = map[string][]byte{}
+	}
+	if cached, found := modelTokenizerOracleCache[key]; found {
+		return cached
+	}
+	cmd := exec.Command(python, "-c", script, dir)
+	cmd.Stdin = bytes.NewReader([]byte(input))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Python reference: %v: %s", err, out)
+	}
+	modelTokenizerOracleCache[key] = out
+	return out
+}
 
 func syntheticPack(t *testing.T, pre, model string) string {
 	t.Helper()
@@ -227,12 +254,7 @@ merges = (p / "merges.txt").read_text(encoding="utf-8").splitlines()
 tk = Tokenizer(tokens, merges, types, cfg["pre"])
 print(json.dumps([tk.encode(s, parse_special=True) for s in json.loads(sys.stdin.read())]))
 `
-	cmd := exec.Command(python, "-c", script, dir)
-	cmd.Stdin = bytes.NewReader(input)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Python reference: %v: %s", err, out)
-	}
+	out := cachedModelTokenizerOracle(t, python, script, dir, string(input))
 	var reference [][]int
 	if err := json.Unmarshal(out, &reference); err != nil {
 		t.Fatal(err)

@@ -34,7 +34,7 @@ func TestOwnerEscalationFixture(t *testing.T) {
 }
 
 func TestOwnerGuardEscalatesWhenGraceExpires(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	exe, err := os.Executable()
 	if err != nil {
@@ -105,7 +105,7 @@ func TestOwnerPipeStopsServerAndEngine(t *testing.T) {
 			}()
 			waitLine := func(prefix string) string {
 				t.Helper()
-				timer := time.NewTimer(20 * time.Second)
+				timer := time.NewTimer(10 * time.Second)
 				defer timer.Stop()
 				for {
 					select {
@@ -138,7 +138,7 @@ func TestOwnerPipeStopsServerAndEngine(t *testing.T) {
 			if !tc.starting {
 				line := waitLine("experimental Go server listening on ")
 				addr := strings.SplitN(line, "experimental Go server listening on ", 2)[1]
-				client := &http.Client{Timeout: 5 * time.Second}
+				client := &http.Client{Timeout: 3 * time.Second}
 				response, err := client.Get("http://" + addr + "/health")
 				if err != nil {
 					t.Fatal(err)
@@ -166,7 +166,7 @@ func TestOwnerPipeStopsServerAndEngine(t *testing.T) {
 						t.Fatalf("server exit: %v", err)
 					}
 				}
-			case <-time.After(20 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("server did not exit after its owner pipe closed")
 			}
 			if err := syscall.Kill(pid, 0); err != syscall.ESRCH {

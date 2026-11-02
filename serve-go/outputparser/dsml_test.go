@@ -9,12 +9,41 @@ import (
 	"os/exec"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 type dsmlCase struct {
 	Parts []string `json:"parts"`
+}
+
+var (
+	dsmlOracleMu    sync.Mutex
+	dsmlOracleCache map[string][]byte
+)
+
+func cachedDSMLOracle(t *testing.T, interpreter, oracle, input string) []byte {
+	t.Helper()
+	key := interpreter + "\x00" + oracle + "\x00" + input
+	dsmlOracleMu.Lock()
+	defer dsmlOracleMu.Unlock()
+	if dsmlOracleCache == nil {
+		dsmlOracleCache = map[string][]byte{}
+	}
+	if cached, found := dsmlOracleCache[key]; found {
+		return cached
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, interpreter, "-c", oracle)
+	cmd.Stdin = bytes.NewReader([]byte(input))
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Python oracle: %v", err)
+	}
+	dsmlOracleCache[key] = output
+	return output
 }
 
 type dsmlParameter struct {
@@ -101,14 +130,7 @@ json.dump(results, sys.stdout, ensure_ascii=False)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, python(t), "-c", oracle)
-	cmd.Stdin = bytes.NewReader(data)
-	gotPython, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("Python oracle: %v", err)
-	}
+	gotPython := cachedDSMLOracle(t, python(t), oracle, string(data))
 	var expected []dsmlResult
 	if err := json.Unmarshal(gotPython, &expected); err != nil || len(expected) != len(cases) {
 		t.Fatalf("Python results: %d, error %v", len(expected), err)
@@ -177,14 +199,7 @@ json.dump(results, sys.stdout)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, python(t), "-c", oracle)
-	cmd.Stdin = bytes.NewReader(data)
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("Python oracle: %v", err)
-	}
+	output := cachedDSMLOracle(t, python(t), oracle, string(data))
 	var want []any
 	if err := json.Unmarshal(output, &want); err != nil || len(want) != len(cases) {
 		t.Fatalf("Python results: %d, error %v", len(want), err)

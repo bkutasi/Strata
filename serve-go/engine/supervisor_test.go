@@ -53,7 +53,7 @@ func TestSupervisorQueuedCancellationDoesNotStopEngine(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close(testContext(t)) })
 	<-s.gate
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
@@ -68,7 +68,7 @@ func TestSupervisorQueuedCancellationDoesNotStopEngine(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("queued generation error=%v", err)
 		}
-	case <-time.After(35 * time.Second):
+	case <-time.After(12 * time.Second):
 		t.Fatal("queued generation did not cancel")
 	}
 	s.gate <- struct{}{}

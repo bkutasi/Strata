@@ -7,8 +7,35 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 )
+
+var (
+	templatePackOracleMu    sync.Mutex
+	templatePackOracleCache map[string][]byte
+)
+
+func cachedTemplatePackOracle(t *testing.T, python, script, path, input string) []byte {
+	t.Helper()
+	key := python + "\x00" + script + "\x00" + path + "\x00" + input
+	templatePackOracleMu.Lock()
+	defer templatePackOracleMu.Unlock()
+	if templatePackOracleCache == nil {
+		templatePackOracleCache = map[string][]byte{}
+	}
+	if cached, found := templatePackOracleCache[key]; found {
+		return cached
+	}
+	cmd := exec.Command(python, "-c", script, path)
+	cmd.Stdin = bytes.NewReader([]byte(input))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Python renderer: %v: %s", err, output)
+	}
+	templatePackOracleCache[key] = output
+	return output
+}
 
 func TestOptionalPackTemplateDifferential(t *testing.T) {
 	dir := os.Getenv("STRATA_TEMPLATE_PACK")
@@ -44,12 +71,7 @@ template = ChatTemplate(sys.argv[1])
 cases = json.load(sys.stdin)
 json.dump([template.render(c["messages"], tools=c["tools"], **c["kwargs"]) for c in cases], sys.stdout, ensure_ascii=False)
 `
-	cmd := exec.Command("../../.venv/bin/python", "-c", script, path)
-	cmd.Stdin = bytes.NewReader(input)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Python renderer: %v: %s", err, output)
-	}
+	output := cachedTemplatePackOracle(t, "../../.venv/bin/python", script, path, string(input))
 	var expected []string
 	if err := json.Unmarshal(output, &expected); err != nil {
 		t.Fatal(err)

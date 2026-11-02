@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"strata/toolparser"
@@ -133,8 +134,21 @@ func python(t *testing.T) string {
 	return path
 }
 
+var (
+	fixturesMu   sync.Mutex
+	fixturesByPy map[string]fixtureSet
+)
+
 func loadFixtures(t *testing.T, interpreter string) fixtureSet {
 	t.Helper()
+	fixturesMu.Lock()
+	defer fixturesMu.Unlock()
+	if fixturesByPy == nil {
+		fixturesByPy = map[string]fixtureSet{}
+	}
+	if cached, found := fixturesByPy[interpreter]; found {
+		return cached
+	}
 	cmd := exec.Command(interpreter, "oracle.py")
 	cmd.Stdin = strings.NewReader("{\"op\":\"fixtures\"}\n")
 	data, err := cmd.Output()
@@ -148,6 +162,7 @@ func loadFixtures(t *testing.T, interpreter string) fixtureSet {
 	if err := json.Unmarshal(data, &response); err != nil || response.Error != "" {
 		t.Fatalf("fixtures: %v %s", err, data)
 	}
+	fixturesByPy[interpreter] = response.Result
 	return response.Result
 }
 

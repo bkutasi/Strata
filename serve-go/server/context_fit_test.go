@@ -53,7 +53,7 @@ func TestFitOutputTokens(t *testing.T) {
 }
 
 func TestStrictOutputLimitAcrossAPIs(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &contextEngine{limit: 13}
 	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
@@ -116,7 +116,7 @@ func TestStrictOutputLimitAcrossAPIs(t *testing.T) {
 }
 
 func TestAPIsFitOutputToContext(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &contextEngine{limit: 13}
 	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
@@ -143,7 +143,7 @@ func TestAPIsFitOutputToContext(t *testing.T) {
 }
 
 func TestLargeOutputBudgetFitsContext(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &contextEngine{limit: 8192}
 	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
@@ -167,7 +167,7 @@ func TestLargeOutputBudgetFitsContext(t *testing.T) {
 }
 
 func TestNonPositiveOutputLimitsUseRemainingContext(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &contextEngine{limit: 100}
 	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,
@@ -192,7 +192,7 @@ func TestNonPositiveOutputLimitsUseRemainingContext(t *testing.T) {
 }
 
 func TestChatMaxCompletionTokensPrecedence(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	eng := &contextEngine{limit: 100}
 	handler, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: eng, Renderer: contextRenderer{}, MaxBody: 8192, MaxPromptBytes: 2048,

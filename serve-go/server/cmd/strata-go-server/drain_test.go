@@ -33,7 +33,7 @@ func TestServerDrainsActiveRequestOnShutdown(t *testing.T) {
 	go func() { done <- serveUntilShutdown(ctx, server, ln) }()
 	requestDone := make(chan error, 1)
 	go func() {
-		response, err := (&http.Client{Timeout: 10 * time.Second}).Get("http://" + ln.Addr().String())
+		response, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + ln.Addr().String())
 		if err == nil {
 			var body []byte
 			body, err = io.ReadAll(response.Body)
@@ -44,7 +44,7 @@ func TestServerDrainsActiveRequestOnShutdown(t *testing.T) {
 		}
 		requestDone <- err
 	}()
-	timer := time.NewTimer(10 * time.Second)
+	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
 	select {
 	case <-entered:

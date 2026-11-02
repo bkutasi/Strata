@@ -23,7 +23,7 @@ func (cacheUsageEngine) GenerateWithOptions(_ context.Context, _ []int, _ int, o
 }
 
 func TestCacheUsageAcrossAPIs(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 		Engine: cacheUsageEngine{}, Renderer: contextRenderer{}, MaxBody: 8192,
 		MaxPromptBytes: 2048, MaxOutputTokens: 512, MaxConcurrent: 1})

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -172,6 +173,35 @@ type diffResult struct {
 
 // Differential scope: decoder output routed entirely as content, with synthetic
 // non-content boundaries; this does not exercise Python's OutputParser.
+var (
+	streamOracleMu    sync.Mutex
+	streamOracleCache map[string][]byte
+)
+
+func cachedStreamOracle(t *testing.T, python, script, input string) []byte {
+	t.Helper()
+	key := python + "\x00" + script + "\x00" + input
+	streamOracleMu.Lock()
+	defer streamOracleMu.Unlock()
+	if streamOracleCache == nil {
+		streamOracleCache = map[string][]byte{}
+	}
+	if cached, found := streamOracleCache[key]; found {
+		return cached
+	}
+	cmd := exec.Command(python, "-c", script)
+	cmd.Stdin = bytes.NewReader([]byte(input))
+	output, err := cmd.Output()
+	if err != nil {
+		if e, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("Python: %v\n%s", err, e.Stderr)
+		}
+		t.Fatal(err)
+	}
+	streamOracleCache[key] = output
+	return output
+}
+
 func TestPythonDifferential(t *testing.T) {
 	python := "../../.venv/bin/python"
 	if _, err := os.Stat(python); os.IsNotExist(err) {
@@ -225,15 +255,7 @@ for case in json.load(sys.stdin):
     results.append(dict(out=out, pending=pending, hit=m.hit or "", finish=tail))
 json.dump(results, sys.stdout, ensure_ascii=True)
 `
-	cmd := exec.Command(python, "-c", script)
-	cmd.Stdin = bytes.NewReader(data)
-	output, err := cmd.Output()
-	if err != nil {
-		if e, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("Python: %v\n%s", err, e.Stderr)
-		}
-		t.Fatal(err)
-	}
+	output := cachedStreamOracle(t, python, script, string(data))
 	var expected []diffResult
 	if err := json.Unmarshal(output, &expected); err != nil {
 		t.Fatal(err)

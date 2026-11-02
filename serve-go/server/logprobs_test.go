@@ -8,7 +8,7 @@ import (
 )
 
 func TestLogprobCollectorSpell(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	c := newLogprobCollector(tok, map[int]bool{257: true}, nil)
 	for _, id := range []int{'x', 0xe2, 0x82, 0xac, 257, 'a', 'b'} {
 		if err := c.Add(logprobInput{ID: id, Logprob: -1}); err != nil {
@@ -33,7 +33,7 @@ func TestLogprobCollectorSpell(t *testing.T) {
 }
 
 func TestLogprobCollectorBoundaries(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	c := newLogprobCollector(tok, nil, nil)
 	for _, id := range []int{259, 'a', 'b'} {
 		if err := c.Add(logprobInput{ID: id}); err != nil {
@@ -50,7 +50,7 @@ func TestLogprobCollectorBoundaries(t *testing.T) {
 }
 
 func TestLogprobCollectorAllowed(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	c := newLogprobCollector(tok, nil, []int{'a', 'b', 0xe2})
 	if err := c.Add(logprobInput{ID: 'a', Logprob: -2, Alternatives: []logprobAlternative{
 		{ID: 'b', Logprob: -1}, {ID: 0xe2, Logprob: -1}, {ID: 'c', Logprob: -0.1},
@@ -82,7 +82,7 @@ func TestLogprobCollectorAllowed(t *testing.T) {
 }
 
 func TestLogprobCollectorNoSurvivorAndOwn(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	c := newLogprobCollector(tok, nil, []int{'z'})
 	if err := c.Add(logprobInput{ID: 'a', Logprob: -0.3, Alternatives: []logprobAlternative{{ID: 'b', Logprob: -1}}}); err != nil {
 		t.Fatal(err)

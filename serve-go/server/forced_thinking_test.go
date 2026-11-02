@@ -20,7 +20,7 @@ func bytesAsTokens(text string) []int {
 }
 
 func TestForcedThinkingHeldClosingTag(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true, Tools: []map[string]any{{"name": "lookup"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestForcedThinkingHeldClosingTag(t *testing.T) {
 }
 
 func TestForcedThinkingHonorsModelToolCall(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true, Tools: []map[string]any{{"name": "lookup"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestForcedThinkingHonorsModelToolCall(t *testing.T) {
 }
 
 func TestDeepSeekForcedThinkingBudget(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.NewDeepSeek(outputparser.Options{Thinking: true, Tools: []map[string]any{{"name": "lookup"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestForcedToolWithThinking(t *testing.T) {
 	} {
 		for _, budget := range []bool{false, true} {
 			for _, stream := range []bool{false, true} {
-				tok, _ := syntheticTokenizer(t)
+				tok := sharedTokenizer(t)
 				eng := &budgetEngine{segments: [][]int{
 					bytesAsTokens("thought</think>\nignored"),
 					bytesAsTokens("<parameter=q>yes</parameter></function></tool_call>"),

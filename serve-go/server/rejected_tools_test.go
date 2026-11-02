@@ -36,7 +36,7 @@ func TestRejectedToolMetadata(t *testing.T) {
 		for _, stream := range []bool{false, true} {
 			for _, text := range []string{rejected, "ordinary answer"} {
 				t.Run(tc.name+"/"+map[bool]string{false: "one-shot", true: "stream"}[stream]+"/"+map[bool]string{false: "normal", true: "rejected"}[text == rejected], func(t *testing.T) {
-					tok, _ := syntheticTokenizer(t)
+					tok := sharedTokenizer(t)
 					h, err := New(Config{Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,
 						Engine: rejectedToolEngine{text}, Renderer: contextRenderer{}, MaxBody: 8192,
 						MaxPromptBytes: 2048, MaxOutputTokens: 512, MaxConcurrent: 1})

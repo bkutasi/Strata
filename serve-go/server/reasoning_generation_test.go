@@ -41,7 +41,7 @@ func (e *budgetEngine) GenerateWithOptions(ctx context.Context, ids []int, limit
 }
 
 func TestReasoningBudgetWaitsForCleanBoundary(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	for _, tc := range []struct {
 		name   string
 		tokens []int
@@ -66,7 +66,7 @@ func TestReasoningBudgetWaitsForCleanBoundary(t *testing.T) {
 }
 
 func TestReasoningBudgetDoesNotResumeAfterThinkingEnds(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestReasoningBudgetDoesNotResumeAfterThinkingEnds(t *testing.T) {
 }
 
 func TestReasoningBudgetRequiresParserStatus(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	_, err := generate(context.Background(), pumpEngine{tokens: []int{'a'}}, tok, &pumpParser{},
 		[]int{'H'}, 200, engine.Sampling{}, nil, 3, func([]outputparser.Event) error { return nil })
 	if err == nil {
@@ -110,7 +110,7 @@ func TestReasoningBudgetAggregatesEngineTimings(t *testing.T) {
 }
 
 func TestReasoningBudgetReservesAnswerSpace(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestReasoningBudgetReservesAnswerSpace(t *testing.T) {
 }
 
 func TestReasoningBudgetStopInContinuedAnswer(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true})
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestReasoningBudgetStopInContinuedAnswer(t *testing.T) {
 }
 
 func TestReasoningBudgetStopsAndContinues(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestReasoningBudgetStopsAndContinues(t *testing.T) {
 }
 
 func TestReasoningTokenCountExcludesStopAndIncludesReasoningCall(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	for _, tc := range []struct {
 		text  string
 		stop  bool
@@ -231,7 +231,7 @@ func TestReasoningTokenCountExcludesStopAndIncludesReasoningCall(t *testing.T) {
 }
 
 func TestReasoningBudgetWithoutRoomEndsAtLength(t *testing.T) {
-	tok, _ := syntheticTokenizer(t)
+	tok := sharedTokenizer(t)
 	parser, err := outputparser.New(outputparser.Options{Thinking: true})
 	if err != nil {
 		t.Fatal(err)

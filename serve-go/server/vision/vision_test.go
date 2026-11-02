@@ -133,7 +133,7 @@ func stallListener(t *testing.T) *net.TCPListener {
 
 func waitForStall(t *testing.T, listener *net.TCPListener) net.Conn {
 	t.Helper()
-	_ = listener.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = listener.SetDeadline(time.Now().Add(3 * time.Second))
 	conn, err := listener.Accept()
 	if err != nil {
 		t.Fatal(err)

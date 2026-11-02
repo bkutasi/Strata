@@ -15,7 +15,7 @@ func lazyResult(t *testing.T, ch <-chan error) error {
 	select {
 	case err := <-ch:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for lazy reader")
 		return nil
 	}
@@ -86,7 +86,7 @@ func TestLazyCancellationAndCloseReapChild(t *testing.T) {
 			if err := lazyResult(t, result); !errors.Is(err, context.Canceled) {
 				t.Fatalf("encode cancellation: %v", err)
 			}
-			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 			var b [1]byte
 			if n, err := conn.Read(b[:]); n != 0 || err == nil {
 				t.Fatalf("child connection remained open: n=%d err=%v", n, err)

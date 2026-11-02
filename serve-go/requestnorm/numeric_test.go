@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -46,6 +47,34 @@ func numericShape(v Value) any {
 	default:
 		panic("unexpected JSON kind")
 	}
+}
+
+var (
+	numericOracleMu    sync.Mutex
+	numericOracleCache map[string][]byte
+)
+
+func cachedNumericOracle(t *testing.T, python, script, request string) []byte {
+	t.Helper()
+	key := python + "\x00" + script + "\x00" + request
+	numericOracleMu.Lock()
+	defer numericOracleMu.Unlock()
+	if numericOracleCache == nil {
+		numericOracleCache = map[string][]byte{}
+	}
+	if cached, found := numericOracleCache[key]; found {
+		return cached
+	}
+	cmd := exec.Command(python, "-c", script)
+	cmd.Stdin = strings.NewReader(request)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Python reference: %v: %s", err, stderr.String())
+	}
+	numericOracleCache[key] = output
+	return output
 }
 
 func TestNumericSemanticsDifferential(t *testing.T) {
@@ -85,14 +114,7 @@ def shape(value):
 messages, tools, kwargs = openai_to_messages(json.load(sys.stdin))
 json.dump(shape({"messages": messages, "tools": tools, "kwargs": kwargs}), sys.stdout)
 `
-	cmd := exec.Command(python, "-c", script)
-	cmd.Stdin = strings.NewReader(request)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("Python reference: %v: %s", err, stderr.String())
-	}
+	output := cachedNumericOracle(t, python, script, request)
 	var want any
 	if err := json.Unmarshal(output, &want); err != nil {
 		t.Fatalf("Python reference result %q: %v", output, err)

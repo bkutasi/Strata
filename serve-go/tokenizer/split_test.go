@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -219,6 +220,38 @@ func referenceCorpus() []string {
 	return inputs
 }
 
+var (
+	referenceOracleMu    sync.Mutex
+	referenceOracleCache map[string][]byte
+)
+
+func cachedReferenceOracle(t *testing.T, python, script, mode, input string) []byte {
+	t.Helper()
+	key := python + "\x00" + script + "\x00" + mode + "\x00" + input
+	referenceOracleMu.Lock()
+	defer referenceOracleMu.Unlock()
+	if referenceOracleCache == nil {
+		referenceOracleCache = map[string][]byte{}
+	}
+	if cached, found := referenceOracleCache[key]; found {
+		return cached
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, python, script, mode)
+	cmd.Stdin = bytes.NewReader([]byte(input))
+	out, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			t.Fatalf("reference %s: %v\n%s", mode, err, exit.Stderr)
+		}
+		t.Fatal(fmt.Errorf("reference %s: %w", mode, err))
+	}
+	referenceOracleCache[key] = out
+	return out
+}
+
 func runReference(t *testing.T, mode string, input []byte) []byte {
 	t.Helper()
 	python, err := referencePython(filepath.Join("..", ".."), os.Getenv("STRATA_REFERENCE_PYTHON"), runtime.GOOS)
@@ -228,19 +261,7 @@ func runReference(t *testing.T, mode string, input []byte) []byte {
 	if python == "" {
 		t.Skip("reference Python unavailable; set STRATA_REFERENCE_PYTHON to a Python with regex 2026.9.10")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, python, filepath.Join("testdata", "reference.py"), mode)
-	cmd.Stdin = bytes.NewReader(input)
-	out, err := cmd.Output()
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			t.Fatalf("reference %s: %v\n%s", mode, err, exit.Stderr)
-		}
-		t.Fatal(fmt.Errorf("reference %s: %w", mode, err))
-	}
-	return out
+	return cachedReferenceOracle(t, python, filepath.Join("testdata", "reference.py"), mode, string(input))
 }
 
 func referencePython(root, override, goos string) (string, error) {

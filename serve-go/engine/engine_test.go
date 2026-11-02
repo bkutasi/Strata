@@ -135,7 +135,7 @@ func TestLogprobOldEngineDeliversTokenBeforeNextRecord(t *testing.T) {
 	for _, mode := range []string{"logprobs-old-wait", "logprobs-late"} {
 		t.Run(mode, func(t *testing.T) {
 			e := startFake(t, mode, &bytes.Buffer{})
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			count, callbacks := 0, 0
 			_, err := e.GenerateWithOptions(ctx, []int{12, 34}, 3, RequestOptions{
@@ -541,7 +541,7 @@ func TestInvalidEmbeddingsPathRejectedBeforePipe(t *testing.T) {
 func TestProcessConfig(t *testing.T) {
 	dir := t.TempDir()
 	env := append(os.Environ(), "STRATA_TEST_EXPECTED_DIR="+dir, "STRATA_TEST_ENGINE_ENV=engine-only")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	eng, err := StartWithProcessConfig(ctx, os.Args[0], []string{"-test.run=^TestHelperProcess$", "--", "process-config"}, io.Discard, ProcessConfig{Dir: dir, Env: env})
 	if err != nil {
@@ -691,8 +691,9 @@ func TestSamplingAndOrderedCallbacks(t *testing.T) {
 
 func TestProgressCallbackPipeAndFailure(t *testing.T) {
 	t.Run("heartbeat while tokens are buffered", func(t *testing.T) {
+		t.Parallel()
 		e := startFake(t, "busy-ack", &bytes.Buffer{})
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		seen := 0
 		result, err := e.GenerateWithOptions(ctx, []int{1}, 100, RequestOptions{
@@ -709,10 +710,10 @@ func TestProgressCallbackPipeAndFailure(t *testing.T) {
 			t.Fatalf("tokens=%d result=%#v error=%v", seen, result, err)
 		}
 	})
-
 	t.Run("quiet engine sends heartbeat", func(t *testing.T) {
+		t.Parallel()
 		e := startFake(t, "quiet-ack", &bytes.Buffer{})
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		called := false
 		_, err := e.GenerateWithOptions(ctx, []int{1}, 1, RequestOptions{

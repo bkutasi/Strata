@@ -49,7 +49,7 @@ func TestStatusLoggingPreservesAPIResponses(t *testing.T) {
 		{"/v1/responses", `{"input":"` + secret + `","max_output_tokens":32}`},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
-			tok, _ := syntheticTokenizer(t)
+			tok := sharedTokenizer(t)
 			var output statusOutput
 			h, err := New(Config{
 				Model: "test", Family: requestnorm.FamilyQwen, Tokenizer: tok,

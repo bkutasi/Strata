@@ -72,7 +72,7 @@ func TestConfigAcceptsStrataEngineSelector(t *testing.T) {
 		}
 	}()
 	var address string
-	timer := time.NewTimer(20 * time.Second)
+	timer := time.NewTimer(10 * time.Second)
 	defer timer.Stop()
 	select {
 	case value, ok := <-addresses:
@@ -89,7 +89,7 @@ func TestConfigAcceptsStrataEngineSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 		request.Header.Set("Authorization", "Bearer "+key)
-		response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+		response, err := (&http.Client{Timeout: 3 * time.Second}).Do(request)
 		if err != nil {
 			t.Fatal(err)
 		}
