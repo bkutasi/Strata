@@ -38,6 +38,13 @@ func main() {
 }
 
 func run() error {
+	if v := os.Getenv("STRATA_GOGC"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 10 && n <= 1000 {
+			debug.SetGCPercent(n)
+		} else {
+			log.Printf("invalid STRATA_GOGC %q, keeping GOGC 100", v)
+		}
+	}
 	var engineArgs args
 	listen := flag.String("listen", "127.0.0.1:8080", "listen address")
 	model := flag.String("model", "", "model name exposed to clients")
@@ -234,6 +241,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Tokenizer transient buffers are dead; hand pages back before engine start.
+	debug.FreeOSMemory()
 	start := func(ctx context.Context) (*engine.Engine, error) {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()

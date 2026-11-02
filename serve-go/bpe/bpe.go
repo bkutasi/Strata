@@ -2,12 +2,15 @@
 package bpe
 
 import (
+	"bufio"
 	"container/heap"
 	"encoding/json"
 	"fmt"
 	"hash/maphash"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -343,7 +346,134 @@ func New(tokens []string, merges []string, types []int, split Splitter) (*Tokeni
 	return t, nil
 }
 
+// skipSpace skips JSON whitespace.
+func skipSpace(b []byte, pos int) int {
+	for pos < len(b) && (b[pos] == ' ' || b[pos] == '\t' || b[pos] == '\n' || b[pos] == '\r') {
+		pos++
+	}
+	return pos
+}
+
+// scanJSONString decodes one JSON string at b[pos] (opening quote), handling
+// the standard escapes including \u pairs, and returns the string and the
+// position after the closing quote.
+func scanJSONString(b []byte, pos int) (string, int, error) {
+	if pos >= len(b) || b[pos] != '"' {
+		return "", pos, fmt.Errorf("expected string")
+	}
+	pos++
+	var out []byte
+	for {
+		if pos >= len(b) {
+			return "", pos, fmt.Errorf("unterminated string")
+		}
+		c := b[pos]
+		if c == '"' {
+			return string(out), pos + 1, nil
+		}
+		if c != '\\' {
+			out = append(out, c)
+			pos++
+			continue
+		}
+		pos++
+		if pos >= len(b) {
+			return "", pos, fmt.Errorf("unterminated escape")
+		}
+		switch e := b[pos]; e {
+		case '"', '\\', '/':
+			out = append(out, e)
+		case 'b':
+			out = append(out, '\b')
+		case 'f':
+			out = append(out, '\f')
+		case 'n':
+			out = append(out, '\n')
+		case 'r':
+			out = append(out, '\r')
+		case 't':
+			out = append(out, '\t')
+		case 'u':
+			if pos+4 >= len(b) {
+				return "", pos, fmt.Errorf("bad \\u escape")
+			}
+			var r rune
+			for _, h := range b[pos+1 : pos+5] {
+				var v byte
+				switch {
+				case h >= '0' && h <= '9':
+					v = h - '0'
+				case h >= 'a' && h <= 'f':
+					v = h - 'a' + 10
+				case h >= 'A' && h <= 'F':
+					v = h - 'A' + 10
+				default:
+					return "", pos, fmt.Errorf("bad \\u escape")
+				}
+				r = r*16 + rune(v)
+			}
+			pos += 4
+			if r >= 0xD800 && r <= 0xDBFF {
+				// High surrogate: expect a low surrogate pair.
+				if pos+5 >= len(b) || b[pos+1] != '\\' || b[pos+2] != 'u' {
+					return "", pos, fmt.Errorf("lone surrogate")
+				}
+				var lo rune
+				for _, h := range b[pos+3 : pos+7] {
+					var v byte
+					switch {
+					case h >= '0' && h <= '9':
+						v = h - '0'
+					case h >= 'a' && h <= 'f':
+						v = h - 'a' + 10
+					case h >= 'A' && h <= 'F':
+						v = h - 'A' + 10
+					default:
+						return "", pos, fmt.Errorf("bad surrogate")
+					}
+					lo = lo*16 + rune(v)
+				}
+				if lo < 0xDC00 || lo > 0xDFFF {
+					return "", pos, fmt.Errorf("lone surrogate")
+				}
+				r = 0x10000 + (r-0xD800)*0x400 + (lo - 0xDC00)
+				pos += 6
+			}
+			var buf [utf8.UTFMax]byte
+			out = append(out, buf[:utf8.EncodeRune(buf[:], r)]...)
+		default:
+			return "", pos, fmt.Errorf("bad escape")
+		}
+		pos++
+	}
+}
+
+// scanJSONInt decodes one JSON integer at b[pos] (after leading whitespace)
+// and returns its value and the position after it. Values outside the int
+// range or with non-integer syntax are rejected.
+func scanJSONInt(b []byte, pos int) (int, int, error) {
+	pos = skipSpace(b, pos)
+	start := pos
+	if pos < len(b) && b[pos] == '-' {
+		pos++
+	}
+	digits := pos
+	for pos < len(b) && b[pos] >= '0' && b[pos] <= '9' {
+		pos++
+	}
+	if digits == pos || (pos < len(b) && (b[pos] == '.' || b[pos] == 'e' || b[pos] == 'E')) {
+		return 0, start, fmt.Errorf("expected integer")
+	}
+	n, err := strconv.Atoi(string(b[start:pos]))
+	if err != nil {
+		return 0, start, fmt.Errorf("bad integer")
+	}
+	return n, pos, nil
+}
+
 // Load reads the vocabulary, merge list and token types from a pack directory.
+// The vocabulary is decoded as a token stream directly into the dense token
+// slice, so no transient vocabulary map is ever built.
 func Load(dir string, split Splitter) (*Tokenizer, error) {
 	read := func(name string, v any) error {
 		b, err := os.ReadFile(filepath.Join(dir, name))
@@ -355,28 +485,122 @@ func Load(dir string, split Splitter) (*Tokenizer, error) {
 		}
 		return nil
 	}
-	var vocab map[string]int
-	if err := read("vocab.json", &vocab); err != nil {
+	vocabPath := filepath.Join(dir, "vocab.json")
+	vb, err := os.ReadFile(vocabPath)
+	if err != nil {
 		return nil, err
 	}
-	tokens := make([]string, len(vocab))
-	seen := make([]bool, len(vocab))
-	for s, id := range vocab {
-		if id < 0 || id >= len(tokens) || seen[id] {
-			return nil, fmt.Errorf("invalid vocabulary id %d", id)
-		}
-		tokens[id], seen[id] = s, true
+	// Single pass over the raw bytes: vocab ids are contract-dense, so pairs
+	// accumulate in a small id->token map (int keys only, no token copies as
+	// map keys) and are densified once. encoding/json is not used here: its
+	// token stream allocates ~25MB of scanner garbage on a 150k vocab.
+	byID := make(map[int]string)
+	maxID := -1
+	pos := skipSpace(vb, 0)
+	if pos >= len(vb) || vb[pos] != '{' {
+		return nil, fmt.Errorf("vocab.json: expected object")
 	}
+	pos++
+	pos = skipSpace(vb, pos)
+	if pos < len(vb) && vb[pos] == '}' {
+		pos++
+	} else {
+		for {
+			var s string
+			s, pos, err = scanJSONString(vb, pos)
+			if err != nil {
+				return nil, fmt.Errorf("vocab.json: %w", err)
+			}
+			pos = skipSpace(vb, pos)
+			if pos >= len(vb) || vb[pos] != ':' {
+				return nil, fmt.Errorf("vocab.json: expected ':'")
+			}
+			pos++
+			var id int
+			id, pos, err = scanJSONInt(vb, pos)
+			if err != nil {
+				return nil, fmt.Errorf("vocab.json: %w", err)
+			}
+			if id < 0 {
+				return nil, fmt.Errorf("invalid vocabulary id %d", id)
+			}
+			if _, dup := byID[id]; dup {
+				return nil, fmt.Errorf("invalid vocabulary id %d", id)
+			}
+			byID[id] = s
+			if id > maxID {
+				maxID = id
+			}
+			pos = skipSpace(vb, pos)
+			if pos >= len(vb) {
+				return nil, fmt.Errorf("vocab.json: unexpected end")
+			}
+			if vb[pos] == ',' {
+				pos++
+				continue
+			}
+			if vb[pos] == '}' {
+				pos++
+				break
+			}
+			return nil, fmt.Errorf("vocab.json: expected ',' or '}'")
+		}
+	}
+	pos = skipSpace(vb, pos)
+	if pos != len(vb) {
+		return nil, fmt.Errorf("vocab.json: unexpected data after top-level value")
+	}
+	tokens := make([]string, maxID+1)
+	if len(byID) != len(tokens) {
+		return nil, fmt.Errorf("vocab.json: ids are not dense 0..%d", maxID)
+	}
+	for id, s := range byID {
+		tokens[id] = s
+	}
+	byID = nil
 	var types []int
 	if err := read("token_type.json", &types); err != nil {
 		return nil, err
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "merges.txt"))
+	mf, err := os.Open(filepath.Join(dir, "merges.txt"))
 	if err != nil {
 		return nil, err
 	}
-	merges := strings.Split(string(b), "\n")
-	return New(tokens, merges, types, split)
+	defer mf.Close()
+	// Split on '\n' exactly like strings.Split(string(b), "\n"): keep '\r',
+	// keep empty lines, and yield a trailing empty entry when the file ends
+	// with a newline (or is empty), without ever materializing string(b).
+	var merges []string
+	var pending []byte
+	br := bufio.NewReader(mf)
+	for {
+		line, rerr := br.ReadBytes('\n')
+		if len(line) > 0 && line[len(line)-1] == '\n' {
+			if len(pending) == 0 {
+				merges = append(merges, string(line[:len(line)-1]))
+			} else {
+				pending = append(pending, line[:len(line)-1]...)
+				merges = append(merges, string(pending))
+				pending = nil
+			}
+			continue
+		}
+		pending = append(pending, line...)
+		if rerr == io.EOF {
+			merges = append(merges, string(pending))
+			break
+		}
+		if rerr != nil {
+			return nil, rerr
+		}
+	}
+	tok, err := New(tokens, merges, types, split)
+	if err != nil {
+		return nil, err
+	}
+	// Transient vocab map, token aliases and file buffers are dead; hand pages back now.
+	debug.FreeOSMemory()
+	return tok, nil
 }
 
 type candidate struct {
